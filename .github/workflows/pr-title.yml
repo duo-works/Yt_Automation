@@ -1,0 +1,46 @@
+name: PR Başlık Kontrolü
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  baslik:
+    name: pr-title-ok
+    runs-on: ubuntu-latest
+    steps:
+      - name: Başlık formatını doğrula
+        env:
+          BASLIK: ${{ github.event.pull_request.title }}
+        run: |
+          DESEN='^(feat|fix|refactor|docs|test|chore|perf)(\([a-z0-9@/._-]+\))?!?: .+ \[DW-[0-9]+\]$'
+
+          if printf '%s' "$BASLIK" | grep -qP "$DESEN"; then
+            echo "✅ Başlık geçerli: $BASLIK"
+            exit 0
+          fi
+
+          cat <<'MSG'
+          ❌ PR başlığı gerekli formatta değil.
+
+          Beklenen format:
+            <tür>(<kapsam>): <açıklama> [DW-<numara>]
+
+          Geçerli örnekler:
+            feat(auth): e-posta ile giriş akışı [DW-42]
+            fix(orders): tarih formatı hatası [DW-57]
+            chore: bağımlılıkları güncelle [DW-63]
+
+          Geçerli türler: feat · fix · refactor · docs · test · chore · perf
+
+          [DW-<numara>] kısmı zorunludur ve Notion'daki görev ID'sidir.
+          Görev ID'si olmayan bir iş yapmıyorsunuz demektir — önce Notion'da görev açın.
+
+          Detay: CONTRIBUTING.md → "4. Pull Request"
+          MSG
+
+          echo "Gelen başlık: $BASLIK"
+          exit 1

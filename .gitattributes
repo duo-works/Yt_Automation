@@ -1,0 +1,19 @@
+# Satır sonlarını normalize et — macOS/Windows karışık ekiplerde diff gürültüsünü önler
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Lock dosyaları PR diff'inde katlanmış gelsin
+package-lock.json linguist-generated=true
+pnpm-lock.yaml   linguist-generated=true
+yarn.lock        linguist-generated=true
+uv.lock          linguist-generated=true
+poetry.lock      linguist-generated=true

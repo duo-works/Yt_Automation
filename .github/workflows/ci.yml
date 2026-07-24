@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Repo'daki stack'i tespit et. Template stack-agnostik olduğu için
+  # kod yığını seçilene kadar hiçbir iş çalışmaz ve CI yeşil kalır.
+  tespit:
+    name: Stack tespiti
+    runs-on: ubuntu-latest
+    outputs:
+      node: ${{ steps.bak.outputs.node }}
+      python: ${{ steps.bak.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: bak
+        run: |
+          [ -f package.json ]   && echo "node=true"   >> "$GITHUB_OUTPUT" || echo "node=false"   >> "$GITHUB_OUTPUT"
+          [ -f pyproject.toml ] && echo "python=true" >> "$GITHUB_OUTPUT" || echo "python=false" >> "$GITHUB_OUTPUT"
+          echo "--- tespit ---" && cat "$GITHUB_OUTPUT"
+
+  node:
+    name: Node
+    needs: tespit
+    if: needs.tespit.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpm kur
+        if: hashFiles('pnpm-lock.yaml') != ''
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Bağımlılıkları kur
+        run: |
+          if   [ -f pnpm-lock.yaml ];     then pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ];          then yarn install --frozen-lockfile
+          elif [ -f package-lock.json ];  then npm ci
+          else npm install
+          fi
+
+      # Aşağıdaki adımlar: script tanımlıysa çalıştırır ve HATASI CI'yı KIRAR.
+      # Script tanımlı değilse sessizce atlar. Böylece template ilk günden yeşil,
+      # script'ler eklendikçe kontrol kendiliğinden devreye girer.
+      - name: Lint
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "::notice::'lint' script'i tanımlı değil, atlandı"
+          fi
+
+      - name: Typecheck
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.typecheck ? 0 : 1)"; then
+            npm run typecheck
+          else
+            echo "::notice::'typecheck' script'i tanımlı değil, atlandı"
+          fi
+
+      - name: Test
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm test
+          else
+            echo "::notice::'test' script'i tanımlı değil, atlandı"
+          fi
+
+      - name: Build
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+            npm run build
+          else
+            echo "::notice::'build' script'i tanımlı değil, atlandı"
+          fi
+
+  python:
+    name: Python
+    needs: tespit
+    if: needs.tespit.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Bağımlılıkları kur
+        run: |
+          python -m pip install --upgrade pip
+          if   [ -f uv.lock ];          then pip install uv && uv sync --frozen
+          elif [ -f poetry.lock ];      then pip install poetry && poetry install
+          elif [ -f requirements.txt ]; then pip install -r requirements.txt
+          else pip install -e . || echo "::notice::kurulabilir paket yok, atlandı"
+          fi
+
+      - name: Lint (ruff)
+        run: |
+          pip install ruff
+          ruff check .
+
+      - name: Test (pytest)
+        run: |
+          if [ -d tests ] || compgen -G "test_*.py" > /dev/null; then
+            pip install pytest
+            pytest
+          else
+            echo "::notice::test bulunamadı, atlandı"
+          fi
+        shell: bash
+
+  # Branch koruma kuralı SADECE bu check'i zorunlu tutar.
+  # Üstteki job'lar stack'e göre atlanabildiği için isimlerine doğrudan
+  # bağlanmak koruma kuralını kırardı; bu toplayıcı job her koşulda çalışır.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [tespit, node, python]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sonuçları topla
+        run: |
+          echo "tespit: ${{ needs.tespit.result }}"
+          echo "node:   ${{ needs.node.result }}"
+          echo "python: ${{ needs.python.result }}"
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "::error::CI başarısız"
+            exit 1
+          fi
+          echo "CI geçti ✅"

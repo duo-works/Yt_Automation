@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📋 Görev veya hata bildir
+    url: https://www.notion.so/
+    about: >-
+      Bu projede görev takibi Notion'da yapılır, GitHub Issues kullanılmaz.
+      Yeni bir görev veya hata için Notion → Görevler database'ine kayıt açın.
+  - name: 📖 Çalışma kuralları
+    url: https://github.com/duo-works/project-template/blob/main/CONTRIBUTING.md
+    about: Branch, commit ve PR kurallarının tamamı.

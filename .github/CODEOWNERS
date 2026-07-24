@@ -1,0 +1,13 @@
+# Her dosyanın sahibi çekirdek ekiptir → her PR en az bir kişi tarafından gözden geçirilir.
+# GitHub, PR açan kişiyi kendi PR'ının reviewer'ı olarak atamaz; bu yüzden iki kişilik
+# ekipte bu satır "diğer kişi otomatik reviewer olur" anlamına gelir.
+#
+# Not: @duo-works/core takımı org kurulumunda oluşturulur ve iki üyeyi de içerir.
+
+* @duo-works/core
+
+# Süreç dosyalarında değişiklik ekstra dikkat ister
+/.github/       @duo-works/core
+/CONTRIBUTING.md @duo-works/core
+/CLAUDE.md      @duo-works/core
+/docs/decisions/ @duo-works/core
