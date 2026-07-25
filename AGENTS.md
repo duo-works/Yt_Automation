@@ -67,6 +67,7 @@ WHERE "Durum" = 'Devam ediyor'
 5. **Repo köküne plan/rapor/analiz dosyası yazma.** Uzun form dokümantasyon Notion'a gider. Repo'da izin verilen doküman: `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, `docs/` altı.
 6. **Sır yazma.** `.env` dosyasına dokunma; yeni değişken gerekiyorsa `.env.example`'a değersiz olarak ekle.
 7. **Kalıcı mimari karar alındığında** `docs/decisions/` altına ADR ekle (şablon: `docs/decisions/README.md`).
+8. **Notion'da yeni database veya üst seviye sayfa oluştururken parent'ı her zaman `duo-works` hub sayfası olsun** (`3a79bfc9-3b2e-8104-8f7d-df02d3de4a38`). Ekibin bir üyesi workspace'e **guest** olarak eklenmiş durumda ve guest erişimi sayfa bazındadır — hub ağacının dışında oluşturulan hiçbir şeyi göremez. Bunu yaptıktan sonra kullanıcıya paylaşımı doğrulamasını hatırlat.
 
 ## Kod tarzı
 
