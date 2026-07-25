@@ -77,6 +77,30 @@ Her worktree kendi branch'inde olur ve `Dokunulan alanlar` alanına worktree yol
 
 ---
 
+## Komutlar
+
+Protokolün tekrarlayan adımları komut haline getirildi. Gövdeleri `docs/ajan/komutlar/` altında **tek kaynakta** durur; `.claude/commands/` altındakiler oraya yönlendiren ince sarmalayıcılardır.
+
+| Komut | Ne yapar |
+|---|---|
+| `/oturum-basla` | Çakışma sorgusu (kota yedeğiyle) → son 7 günün devirleri → kendi kaydını aç |
+| `/oturum-kapat` | Ne yapıldı + sıradaki adım + `Tamamlandı`, PR linkini işle |
+| `/gorev DW-42` | Görevi üstlen → doğru formatta branch aç → oturum kaydını başlat |
+| `/pr-ac` | PR aç, Notion'daki görev ve oturum kaydını senkronla |
+| `/devir` | Yarım kalan işi devret: `Devredildi` + `Tür = Devir` |
+
+**Codex kullanıyorsan** — repo bazında slash komut desteği yok, aynı dosyalar kişisel prompt dizinine kopyalanır:
+
+```bash
+cp docs/ajan/komutlar/*.md ~/.codex/prompts/
+```
+
+Dosya adı komut adı olur (`oturum-basla.md` → `/oturum-basla`). Gövdeler bu yüzden araç-bağımsız dille yazılmıştır; MCP araç adı geçmez.
+
+⚠️ Kanonik dosyalar değiştiğinde kopyayı tazelemek gerekir. Komut davranışı beklenmedik geliyorsa önce kopyanın güncel olduğunu kontrol et.
+
+---
+
 ## Kesin kurallar
 
 1. **`main`'e doğrudan commit veya push yapma.** Her zaman branch aç.
