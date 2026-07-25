@@ -41,6 +41,10 @@ FROM "collection://280e2fd0-a14a-4d2d-ac25-24585472348e"
 WHERE "Durum" = 'Devam ediyor'
 ```
 
+> ⚠️ **Bu SQL aracı ücretsiz planda saatlik kotalı.** Kota dolarsa sorgu hata döner — bunu "aktif kayıt yok" diye **yorumlama**, protokolün tüm güvencesi bu sorguda.
+>
+> Kota dolduğunda yedek yol: `📓 Oturum Kaydı` data source'una **arama** yap (`data_source_url` parametresiyle), dönen kayıtları tek tek `fetch` ile aç ve `Durum` alanına bak. Daha yavaş ama kotasız. İkisi de başarısızsa kullanıcıya söyle ve çoklu-ajan işine başlama.
+
 ### Oturum SONUNDA
 
 1. Kendi kaydını güncelle: `## Ne yapıldı` ve `## Sıradaki adım` bölümlerini doldur.
