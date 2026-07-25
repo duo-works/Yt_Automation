@@ -19,6 +19,7 @@ Link: <!-- Notion görev linkini yapıştırın -->
 
 - [ ] PR başlığı `<tür>(<kapsam>): <açıklama> [DW-<numara>]` formatında
 - [ ] Notion'daki görev **İncelemede** durumuna alındı, bu PR'ın linki göreve eklendi
+- [ ] Notion **📓 Oturum Kaydı**'ndaki kayıt güncellendi (durum + sıradaki adım + PR linki)
 - [ ] `.env` veya başka bir sır commit edilmedi
 - [ ] Yeni ortam değişkeni varsa `.env.example` güncellendi
 - [ ] Kalıcı bir mimari karar alındıysa `docs/decisions/` altına ADR eklendi

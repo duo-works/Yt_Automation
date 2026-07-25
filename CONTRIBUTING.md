@@ -16,6 +16,7 @@ Karışıklığın tek panzehiri, her bilgi türünün tek bir adresi olmasıdı
 | Kalıcı mimari kararlar | **`docs/decisions/` + Notion → Kararlar** | Dağınık not |
 | Sırlar, API anahtarları | Parola yöneticisi | Repo, Notion, commit'lenmiş `.env` |
 | Sprint hedefi, toplantı notu | **Notion** | — |
+| Oturum günlüğü, devir notu, kim neye dokunuyor | **Notion → 📓 Oturum Kaydı** | Repo içi handoff dosyası |
 
 > **Repo kökünde plan/rapor dosyası açmayın.** Uzun form her şey Notion'a gider. Repo'da sadece `README`, `CONTRIBUTING`, `CLAUDE.md` ve `docs/decisions/` altındaki ADR'ler bulunur.
 
@@ -127,6 +128,16 @@ fix(orders): tarih formatı hatası [DW-57]
 **Bir görev aynı anda tek kişide olur.**
 
 İkiniz de aynı dosyaya gireceksiniz diye endişeleniyorsanız, çözüm kod tarafında değil: önce Notion'da görevi bölün. Kod üstünde değil, **görev üstünde** koordine olun.
+
+### AI ajanlarıyla çalışırken
+
+İkiniz de kendi ajanınızla (Claude Code, Codex) aynı repo üzerinde çalışıyorsunuz. Ajanlar birbirini göremez — bu yüzden **Notion → 📓 Oturum Kaydı** zorunludur:
+
+- **Oturum başında** ajan, `Durum = Devam ediyor` olan kayıtları sorgular. Sizin gireceğiniz dosyalar başkasının aktif kaydındaki `Dokunulan alanlar` ile kesişiyorsa ajan **durur** ve size sorar.
+- **Oturum sonunda** ajan kendi kaydını günceller: ne yapıldı, sıradaki adım, durum.
+- Yarım bırakılan iş `Devredildi` olarak işaretlenir; diğerinin ajanı bir sonraki oturumda bunu okur.
+
+Protokolün tam hali [`AGENTS.md`](AGENTS.md) içindedir — Claude Code ve Codex aynı dosyayı okur.
 
 Uzun süren bir branch'te çalışıyorsanız günde bir kez `main`'i içine alın:
 

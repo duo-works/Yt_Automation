@@ -1,0 +1,83 @@
+# AI Ajanı Konvansiyonları
+
+Bu dosya Claude Code, Codex ve benzeri ajanların bu repo'da çalışırken uyması gereken kuralları içerir — **ajan kuralları için tek kaynak burasıdır.** `CLAUDE.md` bu dosyaya yönlendirir. İnsan kuralları için [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## Bağlam
+
+Bu repo `duo-works` organizasyonuna ait, iki kişilik bir ekip tarafından geliştiriliyor. **Her iki geliştirici de kendi AI ajanlarıyla aynı repo üzerinde çalışıyor.** Görev takibi **Notion**'da, kod review **GitHub PR**'da yapılır. GitHub Issues kapalıdır.
+
+---
+
+## Oturum protokolü (zorunlu)
+
+İki kişinin ajanları birbirinden habersiz çalışırsa aynı dosyaya girer, birbirinin işini tekrar eder veya çelişen kararlar alır. Bunun panzehiri Notion'daki **📓 Oturum Kaydı** database'idir: kim, hangi ajanla, hangi göreve, hangi dosyalara dokunuyor — hepsi orada.
+
+🔗 https://app.notion.com/p/cb1df32162934baba379c8733813893f
+
+### Oturum BAŞINDA — kod yazmadan önce
+
+1. **Aktif kayıtları sorgula.** `📓 Oturum Kaydı` → `Durum = "Devam ediyor"` olan tüm satırlar.
+2. **Çakışma kontrolü.** Başkasına ait aktif bir kayıt varsa ve `Dokunulan alanlar` senin gireceğin dosyalarla kesişiyorsa: **başlama.** Kullanıcıya çakışmayı bildir, ne yapılacağını sor.
+3. **Son 7 günü oku.** Özellikle `Tür = "Devir"` olanları — yarım kalmış iş ve dikkat notları orada.
+4. **Kendi kaydını aç.** `Durum = "Devam ediyor"`, `Görev`, `Branch` ve `Dokunulan alanlar` dolu olacak.
+
+```sql
+-- Aktif kayıtlar (çakışma kontrolü)
+SELECT "Kayıt", "Kişi", "Ajan", "Branch", "Dokunulan alanlar"
+FROM "collection://280e2fd0-a14a-4d2d-ac25-24585472348e"
+WHERE "Durum" = 'Devam ediyor'
+```
+
+### Oturum SONUNDA
+
+1. Kendi kaydını güncelle: `## Ne yapıldı` ve `## Sıradaki adım` bölümlerini doldur.
+2. Durumu ayarla:
+   - İş bitti → `Tamamlandı`
+   - Yarım kaldı, devrediliyor → `Devredildi` **ve** `Tür = "Devir"`
+   - Tıkandın → `Bloke`, nedeni `## Dikkat` altına
+3. PR açıldıysa `GitHub PR` alanını doldur.
+
+### Asla
+
+- Başkasının aktif kaydını değiştirme veya kapatma.
+- Kaydı açmadan kod yazmaya başlama.
+- Oturumu kaydı güncellemeden bitirme.
+
+---
+
+## Kesin kurallar
+
+1. **`main`'e doğrudan commit veya push yapma.** Her zaman branch aç.
+2. **Branch adı:** `<tür>/DW-<numara>-<kisa-aciklama>` — Notion görev ID'si zorunlu. Kullanıcı ID vermediyse sor, uydurma.
+3. **Commit mesajı:** Conventional Commits, açıklama Türkçe, gövdede `Notion: DW-<numara>` satırı.
+4. **PR başlığı:** `<tür>(<kapsam>): <açıklama> [DW-<numara>]` — CI bu formatı zorunlu tutar.
+5. **Repo köküne plan/rapor/analiz dosyası yazma.** Uzun form dokümantasyon Notion'a gider. Repo'da izin verilen doküman: `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, `docs/` altı.
+6. **Sır yazma.** `.env` dosyasına dokunma; yeni değişken gerekiyorsa `.env.example`'a değersiz olarak ekle.
+7. **Kalıcı mimari karar alındığında** `docs/decisions/` altına ADR ekle (şablon: `docs/decisions/README.md`).
+
+## Kod tarzı
+
+- Çevredeki kodun stiline uy: isimlendirme, yorum yoğunluğu, dosya düzeni.
+- Yeni bir bağımlılık eklemeden önce mevcut bağımlılıklarla çözülüp çözülmediğine bak.
+- Kullanıcı istemediği sürece kapsamı genişletme; istenen işi eksiksiz yap.
+
+## Commit ve push
+
+- Kullanıcı açıkça istemedikçe commit veya push yapma.
+- Commit yapılacaksa önce `git status` ve `git diff` ile ne değiştiğini doğrula.
+
+---
+
+## Notion referansı
+
+| Database | Ne için | Data source |
+|---|---|---|
+| 📋 Görevler | Görev, durum, öncelik, DW-ID | `collection://887316e7-61e2-4fd6-815e-282afbbd9e54` |
+| 📓 Oturum Kaydı | Oturum günlüğü, devir, aktif çalışma | `collection://280e2fd0-a14a-4d2d-ac25-24585472348e` |
+| 🚀 Projeler | Proje kayıtları | `collection://41ef304c-212e-418f-b097-f2205ed4d5ff` |
+| 📚 Bilgi Bankası | PRD, mimari, API notu | `collection://1f188db7-0bc4-4a4b-8e7e-08d10ebe86da` |
+| 🧭 Kararlar | ADR aynası | `collection://bcb2b316-c088-440b-8f6c-56805f654f73` |
+| 🗓 Sprintler | Sprint hedefleri | `collection://d57e2544-bb3b-4e8d-9f33-01ab3e1f042d` |
+| 📝 Toplantı Notları | Toplantı kayıtları | `collection://fcad56c0-701c-444f-b29b-00d57899a88a` |
+
+Notion MCP bağlantısı yoksa oturum protokolü uygulanamaz. Bu durumda kullanıcıyı **uyar** ve bağlantı kurulmadan çoklu-ajan işine başlama.

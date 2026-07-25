@@ -12,7 +12,8 @@
 | Nasıl çalışıyoruz? Branch, commit, PR kuralları | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | Neden böyle yapılmış? Mimari kararlar | [`docs/decisions/`](docs/decisions/) |
 | PRD, mimari doküman, API notları | **Notion → Bilgi Bankası** |
-| AI ajanı ile çalışırken konvansiyonlar | [`CLAUDE.md`](CLAUDE.md) |
+| AI ajanı ile çalışırken konvansiyonlar | [`AGENTS.md`](AGENTS.md) — Claude Code ve Codex için tek kaynak |
+| Kim şu an neye dokunuyor? Devir notları | **Notion → 📓 Oturum Kaydı** |
 
 🔗 **Notion çalışma alanı:** `<TEAMSPACE LİNKİ>`
 
