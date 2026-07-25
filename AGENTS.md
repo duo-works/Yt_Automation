@@ -86,6 +86,10 @@ Her worktree kendi branch'inde olur ve `Dokunulan alanlar` alanına worktree yol
 5. **Repo köküne plan/rapor/analiz dosyası yazma.** Uzun form dokümantasyon Notion'a gider. Repo'da izin verilen doküman: `README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md`, `docs/` altı.
 6. **Sır yazma.** `.env` dosyasına dokunma; yeni değişken gerekiyorsa `.env.example`'a değersiz olarak ekle.
 7. **Kalıcı mimari karar alındığında** `docs/decisions/` altına ADR ekle (şablon: `docs/decisions/README.md`).
+   > ⚙️ **2, 3 ve 4 CI tarafından zorunlu tutulur** (`.github/workflows/pr-kurallari.yml`). Branch adını, her commit mesajını ve PR gövdesindeki Notion bağını kontrol eder. Beşi de `pr-title-ok` kapısına bağlı; o kapı branch protection'ın beklediği tek check.
+   >
+   > Bu, hata yapmanı engellemez ama **sessizce** hata yapmanı engeller. Uymayan PR kırmızı olur ve merge edilemez.
+
 8. **Notion'da yeni database veya üst seviye sayfa oluştururken parent'ı her zaman `duo-works` hub sayfası olsun** (`3a79bfc9-3b2e-8104-8f7d-df02d3de4a38`). Ekibin bir üyesi workspace'e **guest** olarak eklenmiş durumda ve guest erişimi sayfa bazındadır — hub ağacının dışında oluşturulan hiçbir şeyi göremez. Bunu yaptıktan sonra kullanıcıya paylaşımı doğrulamasını hatırlat.
 
 ## Kod tarzı

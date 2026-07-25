@@ -46,6 +46,8 @@ chore/DW-63-bagimlilik-guncelleme
 
 Açıklama kısmı Türkçe, küçük harf, kelimeler tire ile ayrılır, Türkçe karakter kullanılmaz (`ş`→`s`, `ı`→`i`, `ğ`→`g`, `ü`→`u`, `ö`→`o`, `ç`→`c`).
 
+> ⚙️ **CI bunu zorunlu tutar.** `.github/workflows/pr-kurallari.yml` → `branch-adi`. Uymayan branch'in PR'ı kırmızı olur.
+
 ---
 
 ## 3. Commit mesajları
@@ -72,6 +74,10 @@ Notion: DW-42
 
 Kapsam (`(auth)`, `(orders)`) opsiyoneldir ama tavsiye edilir. Gövdeye `Notion: DW-42` satırını ekleyin.
 
+> ⚙️ **CI bunu zorunlu tutar.** `pr-kurallari.yml` → `commit-mesaji`, branch'teki her commit'i tek tek kontrol eder (merge commit'leri hariç).
+>
+> Squash merge nedeniyle bu mesajların ömrü branch kadar — `main`'e giden tek commit'in mesajı PR başlığı ve gövdesinden oluşur. Yine de zorunlu: mesajlar squash gövdesinde toplanıyor ve çalışırken "hangi commit hangi göreve ait" izini koruyor.
+
 ---
 
 ## 4. Pull Request
@@ -87,7 +93,25 @@ feat(auth): e-posta ile giriş akışı [DW-42]
 fix(orders): tarih formatı hatası [DW-57]
 ```
 
-`.github/workflows/pr-title.yml` bu formatı doğrular. Uymayan PR **kırmızı** olur ve merge edilemez.
+`.github/workflows/pr-kurallari.yml` bu formatı doğrular. Uymayan PR **kırmızı** olur ve merge edilemez.
+
+### PR gövdesi
+
+Şablonun ilk bölümü (`## Notion görevi`) doldurulmalı: DW numarası **ve** görevin Notion linki.
+
+> ⚙️ **CI bunu zorunlu tutar.** `pr-kurallari.yml` → `pr-govdesi`. Şablondaki `Link:` satırı yorum olarak bırakılırsa kontrol düşer.
+
+### Hangi kontrol neyi bakar
+
+| Job | Kural |
+|---|---|
+| `baslik` | §4 — PR başlığı formatı |
+| `branch-adi` | §2 — branch adı formatı |
+| `commit-mesaji` | §3 — Conventional Commits + `Notion: DW-<n>` |
+| `pr-govdesi` | §4 — PR gövdesindeki Notion bağı |
+| `ajan-dosyalari` | ADR-0002 — `AGENTS.md` bütünlüğü, `CLAUDE.md` bağı |
+
+Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnızca o adı** zorunlu tutuyor; bu yüzden kapı job'ının adı değiştirilmemeli — değişirse koruma kuralı sessizce devre dışı kalır.
 
 ### Kurallar
 

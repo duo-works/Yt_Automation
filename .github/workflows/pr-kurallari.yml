@@ -1,0 +1,277 @@
+name: PR Kuralları
+
+# CONTRIBUTING.md'deki kuralların otomatik zorlayıcısı.
+#
+# NEDEN BU DOSYA: İki geliştirici de hem Claude Code hem Codex kullanıyor.
+# .claude/ altındaki hiçbir ayar Codex'i bağlamaz — seansların yaklaşık yarısı
+# o korumaları görmez. CI, iki ajanı da bağlayan tek katman.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  baslik:
+    name: Başlık formatı
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR başlığını doğrula
+        env:
+          BASLIK: ${{ github.event.pull_request.title }}
+        run: |
+          DESEN='^(feat|fix|refactor|docs|test|chore|perf)(\([a-z0-9@/._-]+\))?!?: .+ \[DW-[0-9]+\]$'
+
+          if printf '%s' "$BASLIK" | grep -qE "$DESEN"; then
+            echo "✅ Başlık geçerli: $BASLIK"
+            exit 0
+          fi
+
+          cat <<'MSG'
+          ❌ PR başlığı gerekli formatta değil.
+
+          Beklenen format:
+            <tür>(<kapsam>): <açıklama> [DW-<numara>]
+
+          Geçerli örnekler:
+            feat(auth): e-posta ile giriş akışı [DW-42]
+            fix(orders): tarih formatı hatası [DW-57]
+            chore: bağımlılıkları güncelle [DW-63]
+
+          Geçerli türler: feat · fix · refactor · docs · test · chore · perf
+
+          [DW-<numara>] kısmı zorunludur ve Notion'daki görev ID'sidir.
+          Görev ID'si olmayan bir iş yapmıyorsunuz demektir — önce Notion'da görev açın.
+
+          Detay: CONTRIBUTING.md → "4. Pull Request"
+          MSG
+
+          echo "Gelen başlık: $BASLIK"
+          exit 1
+
+  branch-adi:
+    name: Branch adı
+    runs-on: ubuntu-latest
+    steps:
+      - name: Branch adını doğrula
+        env:
+          DAL: ${{ github.event.pull_request.head.ref }}
+        run: |
+          DESEN='^(feat|fix|refactor|docs|test|chore|perf)/DW-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$'
+
+          if printf '%s' "$DAL" | grep -qE "$DESEN"; then
+            echo "✅ Branch adı geçerli: $DAL"
+            exit 0
+          fi
+
+          cat <<'MSG'
+          ❌ Branch adı gerekli formatta değil.
+
+          Beklenen format:
+            <tür>/DW-<numara>-<kisa-aciklama>
+
+          Geçerli örnekler:
+            feat/DW-42-kullanici-girisi
+            fix/DW-57-tarih-formati-hatasi
+            chore/DW-63-bagimlilik-guncelleme
+
+          Açıklama kısmı: küçük harf, kelimeler tek tire ile ayrılır,
+          Türkçe karakter kullanılmaz (ş→s, ı→i, ğ→g, ü→u, ö→o, ç→c).
+
+          Branch adını düzeltmek için:
+            git branch -m <yeni-dogru-ad>
+            git push origin -u <yeni-dogru-ad>
+            git push origin --delete <eski-ad>
+
+          Detay: CONTRIBUTING.md → "2. Branch modeli"
+          MSG
+
+          echo "Gelen branch adı: $DAL"
+          exit 1
+
+  pr-govdesi:
+    name: PR gövdesi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notion bağlantısını doğrula
+        env:
+          GOVDE: ${{ github.event.pull_request.body }}
+        run: |
+          EKSIK=0
+
+          if ! printf '%s' "$GOVDE" | grep -qE 'DW-[0-9]+'; then
+            echo "❌ PR gövdesinde DW-<numara> bulunamadı."
+            EKSIK=1
+          fi
+
+          # Şablondaki "Link:" satırı yorum olarak bırakılmışsa gerçek URL yoktur.
+          if ! printf '%s' "$GOVDE" | grep -qE 'https?://(www\.|app\.)?notion\.(so|com)/'; then
+            echo "❌ PR gövdesinde Notion görev linki bulunamadı."
+            EKSIK=1
+          fi
+
+          if [ "$EKSIK" -eq 0 ]; then
+            echo "✅ PR gövdesi Notion görevine bağlı."
+            exit 0
+          fi
+
+          cat <<'MSG'
+
+          PR şablonunun ilk bölümü doldurulmalı:
+
+            ## Notion görevi
+
+            **DW-42**
+            Link: https://app.notion.com/p/...
+
+          Bu bağ olmadan altı ay sonra "bu değişiklik neden yapıldı" sorusunun
+          cevabı kalmıyor. Squash merge sonrası gövde main'de kalıcı olur.
+
+          Detay: CONTRIBUTING.md → "4. Pull Request"
+          MSG
+
+          exit 1
+
+  commit-mesaji:
+    name: Commit mesajları
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Commit mesajlarını doğrula
+        env:
+          TABAN: ${{ github.event.pull_request.base.sha }}
+          UC: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # NOT: Squash merge nedeniyle bu mesajların ömrü branch kadar —
+          # main'e giden tek commit'in mesajı PR başlığı + gövdesinden oluşur.
+          # Yine de kontrol ediliyor: mesajlar squash gövdesinde toplanıyor ve
+          # çalışma sırasında "hangi commit hangi göreve ait" izini koruyor.
+          #
+          # --no-merges: CONTRIBUTING §6 uzun süren branch'lerde `git merge main`
+          # öneriyor; merge commit'lerinin mesajını git üretir, kurala tabi değil.
+
+          BASLIK_DESEN='^(feat|fix|refactor|docs|test|chore|perf)(\([a-z0-9@/._-]+\))?!?: .+'
+          HATA=0
+
+          for SHA in $(git log --no-merges --format=%H "$TABAN".."$UC"); do
+            KONU=$(git log -1 --format=%s "$SHA")
+            TAM=$(git log -1 --format=%B "$SHA")
+
+            if ! printf '%s' "$KONU" | grep -qE "$BASLIK_DESEN"; then
+              echo "❌ ${SHA:0:8} — başlık Conventional Commits formatında değil:"
+              echo "   $KONU"
+              HATA=1
+              continue
+            fi
+
+            if ! printf '%s' "$TAM" | grep -qE '^Notion: DW-[0-9]+$'; then
+              echo "❌ ${SHA:0:8} — gövdede 'Notion: DW-<numara>' satırı yok:"
+              echo "   $KONU"
+              HATA=1
+              continue
+            fi
+
+            echo "✅ ${SHA:0:8} — $KONU"
+          done
+
+          if [ "$HATA" -eq 0 ]; then
+            echo "Tüm commit mesajları geçerli."
+            exit 0
+          fi
+
+          cat <<'MSG'
+
+          Beklenen commit formatı:
+
+            feat(auth): e-posta ile giriş akışı
+
+            Notion: DW-42
+
+          Geçmişi düzeltmek için (push edilmemişse):
+            git rebase -i --autosquash <taban>
+
+          Push edilmişse: yeni bir commit'te düzeltmek yerine
+          `git commit --amend` + `git push --force-with-lease` kullanın.
+
+          Detay: CONTRIBUTING.md → "3. Commit mesajları"
+          MSG
+
+          exit 1
+
+  ajan-dosyalari:
+    name: Ajan dosyaları
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AGENTS.md bütünlüğünü doğrula
+        run: |
+          # ADR-0002: ajan kuralları AGENTS.md'de tek kaynakta tutulur,
+          # CLAUDE.md ona yönlendirir. İkisi birbirinden saparsa Claude Code ve
+          # Codex farklı kurallara uyar — protokolün dayandığı varsayım çöker.
+
+          HATA=0
+
+          if [ ! -f AGENTS.md ]; then
+            echo "❌ AGENTS.md bulunamadı — ajan kurallarının tek kaynağı bu dosya."
+            HATA=1
+          else
+            for BOLUM in '^## Oturum protokolü' '^## Kesin kurallar'; do
+              if ! grep -qE "$BOLUM" AGENTS.md; then
+                echo "❌ AGENTS.md içinde zorunlu bölüm eksik: ${BOLUM#^## }"
+                HATA=1
+              fi
+            done
+          fi
+
+          if [ ! -f CLAUDE.md ]; then
+            echo "❌ CLAUDE.md bulunamadı."
+            HATA=1
+          elif ! grep -qF 'AGENTS.md' CLAUDE.md; then
+            echo "❌ CLAUDE.md artık AGENTS.md'ye yönlendirmiyor."
+            echo "   Claude Code CLAUDE.md'yi otomatik yükler; bu bağ koparsa"
+            echo "   ajan kuralları hiç okunmaz."
+            HATA=1
+          fi
+
+          if [ "$HATA" -eq 0 ]; then
+            echo "✅ Ajan dosyaları tutarlı."
+            exit 0
+          fi
+
+          echo ""
+          echo "Detay: docs/decisions/0002-ajan-koordinasyonu.md"
+          exit 1
+
+  # Branch protection SADECE bu check'i zorunlu tutuyor. Üstteki job'lar
+  # protection ayarına dokunmadan bloke edici hale gelsin diye buraya bağlandı:
+  # biri düşerse bu da düşer.
+  #
+  # ⚠️ İSİM DEĞİŞTİRMEYİN. Protection kuralı job adıyla eşleşiyor, dosya adıyla
+  # değil. `pr-title-ok` adı korunuyor çünkü iki repoda da required context
+  # olarak kayıtlı; değiştirmek koruma kuralını sessizce devre dışı bırakır.
+  kapi:
+    name: pr-title-ok
+    if: always()
+    needs: [baslik, branch-adi, pr-govdesi, commit-mesaji, ajan-dosyalari]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sonuçları topla
+        run: |
+          echo "başlık:        ${{ needs.baslik.result }}"
+          echo "branch adı:    ${{ needs.branch-adi.result }}"
+          echo "PR gövdesi:    ${{ needs.pr-govdesi.result }}"
+          echo "commit mesajı: ${{ needs.commit-mesaji.result }}"
+          echo "ajan dosyaları:${{ needs.ajan-dosyalari.result }}"
+
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "::error::PR kuralları başarısız"
+            exit 1
+          fi
+
+          echo "PR kuralları geçti ✅"
