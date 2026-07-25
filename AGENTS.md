@@ -14,6 +14,19 @@ Bu repo `duo-works` organizasyonuna ait, iki kişilik bir ekip tarafından geli�
 
 🔗 https://app.notion.com/p/cb1df32162934baba379c8733813893f
 
+### İLK oturum — bu repo'da ilk kez çalışıyorsan
+
+Protokol Notion'a bağlı. Bağlantı yoksa protokol sessizce çalışmaz: "aktif kayıt yok" ile "kayıt açamayan bir ajan çalışıyor" aynı görünür. Bu yüzden ilk oturumda **önce dört doğrulama yap, sonuçlarını kullanıcıya raporla**:
+
+1. **Notion MCP bağlantısı var mı?** `📓 Oturum Kaydı` data source'una bir sorgu at (aşağıdaki SQL). Hata alıyorsan bağlantı yok.
+2. **Kullanıcı workspace üyesi mi?** Notion kullanıcı listesini çek; kullanıcının adı orada mı bak. Değilse `Kişi` alanı doldurulamaz.
+3. **`📋 Görevler`'e erişim var mı?** DW-ID okuyabiliyor musun? Okuyamıyorsan branch adı kuralı uygulanamaz.
+4. **`main` güncel mi?** `git switch main && git pull`.
+
+Herhangi biri başarısızsa **çoklu-ajan işine başlama.** Kullanıcıya hangisinin eksik olduğunu söyle ve kurulum rehberine yönlendir: Notion → 📚 Bilgi Bankası → **Ajan Kurulumu**.
+
+Doğrulama geçtiyse bunu bir kez `Tür = "Not"` kaydıyla Notion'a yaz — diğer kişi senin devrede olduğunu böyle görür.
+
 ### Oturum BAŞINDA — kod yazmadan önce
 
 1. **Aktif kayıtları sorgula.** `📓 Oturum Kaydı` → `Durum = "Devam ediyor"` olan tüm satırlar.
