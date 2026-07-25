@@ -30,9 +30,11 @@ Doğrulama geçtiyse bunu bir kez `Tür = "Not"` kaydıyla Notion'a yaz — diğ
 ### Oturum BAŞINDA — kod yazmadan önce
 
 1. **Aktif kayıtları sorgula.** `📓 Oturum Kaydı` → `Durum = "Devam ediyor"` olan tüm satırlar.
-2. **Çakışma kontrolü.** Başkasına ait aktif bir kayıt varsa ve `Dokunulan alanlar` senin gireceğin dosyalarla kesişiyorsa: **başlama.** Kullanıcıya çakışmayı bildir, ne yapılacağını sor.
+2. **Çakışma kontrolü.** **Bu oturuma ait olmayan** her aktif kayıt kontrol edilir — `Dokunulan alanlar` senin gireceğin dosyalarla kesişiyorsa: **başlama.** Kullanıcıya çakışmayı bildir, ne yapılacağını sor.
+
+   ⚠️ Ölçüt "başkasına ait" **değil**, "bu oturuma ait değil". Her iki geliştirici de hem Claude Code hem Codex kullanıyor; aynı kişinin iki ajanı aynı anda çalışabilir. `Kişi` alanı seninkiyle aynı diye bir kaydı atlarsan, kendi diğer ajanınla çakışırsın — bu en olası çakışma senaryosu, çünkü ikisi çoğu zaman aynı makinede ve aynı çalışma dizinindedir.
 3. **Son 7 günü oku.** Özellikle `Tür = "Devir"` olanları — yarım kalmış iş ve dikkat notları orada.
-4. **Kendi kaydını aç.** `Durum = "Devam ediyor"`, `Görev`, `Branch` ve `Dokunulan alanlar` dolu olacak.
+4. **Kendi kaydını aç.** `Durum = "Devam ediyor"`, `Görev`, `Branch` ve `Dokunulan alanlar` dolu olacak. Başlık formatı `<tarih> · <kişi> · <ajan> · <DW-ID>` — ajan adı zorunlu, aynı kişinin iki kaydı ancak böyle ayırt edilir.
 
 ```sql
 -- Aktif kayıtlar (çakışma kontrolü)
@@ -56,9 +58,22 @@ WHERE "Durum" = 'Devam ediyor'
 
 ### Asla
 
-- Başkasının aktif kaydını değiştirme veya kapatma.
+- **Kendi açmadığın** hiçbir aktif kaydı değiştirme veya kapatma — aynı kişiye ait olsa bile. Onu senin kardeş ajanın açmış olabilir.
 - Kaydı açmadan kod yazmaya başlama.
 - Oturumu kaydı güncellemeden bitirme.
+
+### Aynı kişinin iki ajanı aynı anda çalışıyorsa
+
+Her iki geliştirici de hem Claude Code hem Codex kullanıyor. İki ajanın **aynı çalışma dizininde** paralel çalışması Notion protokolüyle çözülemez: ikisi de aynı dosyalara yazar, git indeksini paylaşır, birbirinin düzenlemesini üzerine yazar. Oturum kaydı bunu *raporlar* ama *engelleyemez*.
+
+Kural: **iki ajan aynı anda çalışacaksa ayrı çalışma dizini kullanılır.**
+
+```bash
+# Aynı repo, ayrı çalışma dizini — git worktree
+git worktree add ../Yt_Automation-codex feat/DW-42-bir-is
+```
+
+Her worktree kendi branch'inde olur ve `Dokunulan alanlar` alanına worktree yolunu da yaz. Ayrı dizin yoksa ikinci ajanı **başlatma**.
 
 ---
 
