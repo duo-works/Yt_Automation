@@ -8,6 +8,39 @@ Bu repo `duo-works` organizasyonuna ait, iki kişilik bir ekip tarafından geli�
 
 ---
 
+## İlk kez buradaysan — okuma sırası
+
+Kullanıcı sana *"projeyi oku ve anlat"* gibi bir şey dediyse başlangıç noktası burasıdır. Projenin durumu **repo'da değil, Notion'da** yaşıyor; yalnızca dosyaları okuyarak eksik bir tablo çıkarırsın.
+
+Sırayla:
+
+| # | Nereye | Ne öğrenirsin |
+|---|---|---|
+| 1 | Bu dosyanın tamamı | Kurallar, oturum protokolü, komutlar |
+| 2 | [`README.md`](README.md) | Proje ne yapıyor, hangi aşamada |
+| 3 | Notion → [🎬 Yt_Automation PRD](https://app.notion.com/p/3a79bfc93b2e813087b6c35c78af0ee7) | Kapsam, ilk sürümde **olmayacaklar**, kota kısıtları, açık sorular |
+| 4 | Notion → [📋 Görevler](https://app.notion.com/p/93190546ef3941c88ab1d2bd0d1fface) | Sıradaki iş, DW-ID'ler, kim neyi almış |
+| 5 | Notion → [📓 Oturum Kaydı](https://app.notion.com/p/cb1df32162934baba379c8733813893f) → `🔴 Aktif` | Kim şu an neye dokunuyor |
+| 6 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | İnsan tarafı süreç |
+| 7 | [`docs/decisions/`](docs/decisions/) | Neden böyle yapılmış |
+
+Notion bağlantın yoksa 3, 4 ve 5'i okuyamazsın — bu durumda **eksik bilgiyle konuştuğunu açıkça söyle**, tahmin etme.
+
+### Kullanıcıya ne anlatmalısın
+
+Özetin şunları içermeli:
+
+- **Proje ne yapıyor ve hangi aşamada** — kod var mı, yığın seçildi mi
+- **Kapsamda olmayanlar** — kapsam kayması buradan önlenir, PRD'nin en önemli bölümü
+- **Sıradaki iş ve neyin bloke ettiği**
+- **Aktif oturum var mı**, çakışma riski taşıyor mu
+- **Bilinen kısıtlar** — API kotası, politika riski
+- **Neyin hâlâ belirsiz olduğu**
+
+Son madde en kritiği: PRD'de cevaplanmamış açık sorular var. Bunları **karar verilmiş gibi sunma.** Kullanıcı yanlış varsayımla işe başlarsa hatanın kaynağı sensin. Neyin karar, neyin taslak, neyin açık soru olduğunu ayır.
+
+---
+
 ## Oturum protokolü (zorunlu)
 
 İki kişinin ajanları birbirinden habersiz çalışırsa aynı dosyaya girer, birbirinin işini tekrar eder veya çelişen kararlar alır. Bunun panzehiri Notion'daki **📓 Oturum Kaydı** database'idir: kim, hangi ajanla, hangi göreve, hangi dosyalara dokunuyor — hepsi orada.
