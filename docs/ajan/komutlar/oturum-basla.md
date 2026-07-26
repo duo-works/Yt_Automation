@@ -48,3 +48,9 @@ Ayrı bir çalışma dizininde (git worktree) çalışıyorsan worktree yolunu d
 ## 5. Raporla
 
 Kullanıcıya kısaca: kaç aktif kayıt vardı, çakışma var mıydı, hangi devir notları bulundu, kaydın açıldı mı.
+
+## Sonrası — kontrol bir kerelik değil
+
+Buradaki sonuç **o anki kapsam için** geçerlidir. `Dokunulan alanlar`da yazmayan bir dosyaya ilk kez dokunmadan önce alanı güncelle ve çakışma sorgusunu tekrarla (`AGENTS.md` → "Oturum SIRASINDA").
+
+Gerçek çakışmaların çoğu oturum ortasında doğar: iş büyür, ortak bir dosyaya uzanırsın, ama kaydın hâlâ eski kapsamı gösterir ve karşı taraf seni orada göremez.

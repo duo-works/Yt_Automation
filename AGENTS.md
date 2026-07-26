@@ -47,6 +47,20 @@ WHERE "Durum" = 'Devam ediyor'
 >
 > Kota dolduğunda yedek yol: `📓 Oturum Kaydı` data source'una **arama** yap (`data_source_url` parametresiyle), dönen kayıtları tek tek `fetch` ile aç ve `Durum` alanına bak. Daha yavaş ama kotasız. İkisi de başarısızsa kullanıcıya söyle ve çoklu-ajan işine başlama.
 
+### Oturum SIRASINDA — kapsam büyürse
+
+Oturum başındaki çakışma kontrolü, o an bildiğin dosyalara göre yapılır. **Gerçek çakışmaların çoğu sonradan doğar:** işe `src/report/` için başlarsın, kırk dakika sonra ortak bir dosyayı değiştirmen gerektiğini fark edersin. O anda kaydın hâlâ eski kapsamı gösteriyordur ve karşı tarafın ajanı seni orada görmez.
+
+Bu yüzden: **`Dokunulan alanlar`da yazmayan bir dosyaya ilk kez dokunmadan önce**
+
+1. Kaydındaki `Dokunulan alanlar` alanını yeni dosya/dizinle güncelle
+2. Çakışma sorgusunu **tekrarla** — oturum başındaki sonuç artık geçersiz
+3. Yeni bir kesişme çıktıysa dur, kullanıcıya bildir, sorma
+
+Özellikle şunlara dokunurken tetikle: paylaşılan config, tip tanımları, ortak istemci/yardımcı modüller, `package.json` benzeri manifest dosyaları, migration'lar. Bunlar iki görevin en sık kesiştiği yerlerdir.
+
+Kapsam büyümesi normaldir; **bildirilmemesi** sorundur.
+
 ### Oturum SONUNDA
 
 1. Kendi kaydını güncelle: `## Ne yapıldı` ve `## Sıradaki adım` bölümlerini doldur.
