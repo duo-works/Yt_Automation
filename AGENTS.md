@@ -135,6 +135,8 @@ Protokolün tekrarlayan adımları komut haline getirildi. Gövdeleri `docs/ajan
 | `/gorev DW-42` | Görevi üstlen → doğru formatta branch aç → oturum kaydını başlat |
 | `/pr-ac` | PR aç, Notion'daki görev ve oturum kaydını senkronla |
 | `/devir` | Yarım kalan işi devret: `Devredildi` + `Tür = Devir` |
+| `/soguk-baslangic` | Projeyi sıfırdan öğren, **kaynaklı** özet üret — yeni ajan devreye girerken |
+| `/denetle` | Bir soğuk başlangıç özetini kaynaklara karşı denetle (farklı oturumda) |
 
 **Codex kullanıyorsan** — repo bazında slash komut desteği yok, aynı dosyalar kişisel prompt dizinine kopyalanır:
 
