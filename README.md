@@ -2,6 +2,14 @@
 
 > Kendi YouTube kanallarımız için yükleme, metadata, thumbnail ve raporlama otomasyonu.
 
+> ### 🤖 AI ajanıysan buradan başla
+>
+> **Bu repoda herhangi bir iş yapmadan önce [`AGENTS.md`](AGENTS.md) dosyasını oku — zorunludur.**
+>
+> İçinde: oturum protokolü (çakışma kontrolü, devir kayıtları), kesin kurallar, hazır komutlar ve Notion referansları. Projeyi tanımak için oradaki **"İlk kez buradaysan — okuma sırası"** bölümünü izle; repo ve Notion'u birlikte kapsıyor.
+>
+> Bu repoda iki geliştirici **dört ayrı ajanla** çalışıyor. Protokolü atlarsan başkasının açık işinin üzerine yazabilirsin.
+
 ---
 
 ## Bu proje şu an nerede
