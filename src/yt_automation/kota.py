@@ -1,8 +1,9 @@
 """YouTube Data API kota muhasebesi.
 
 Kota projenin en sert kısıtı: günlük **10.000 birim** ve tek bir yükleme
-1.600 birim. Yani tavan fiilen günde 5 video. Kota kanal bazında değil
-**proje bazında** — iki kanal aynı bütçeyi paylaşır.
+1.600 birim. Uçtan uca maliyet video başına 1.651 birim (insert + thumbnail
++ doğrulama), yani tavan **günde 6 video** — altıncıdan sonra 94 birim kalır.
+Kota kanal bazında değil **proje bazında** — iki kanal aynı bütçeyi paylaşır.
 
 ⚠️ Reddedilen istek de birim harcar. Bu yüzden doğrulama yüklemeden önce
 yapılır ve bütçe aşılacaksa istek hiç gönderilmez.
