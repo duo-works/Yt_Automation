@@ -62,23 +62,41 @@ Doğrulama geçtiyse bunu bir kez `Tür = "Not"` kaydıyla Notion'a yaz — diğ
 
 ### Oturum BAŞINDA — kod yazmadan önce
 
-1. **Aktif kayıtları sorgula.** `📓 Oturum Kaydı` → `Durum = "Devam ediyor"` olan tüm satırlar.
-2. **Çakışma kontrolü.** **Bu oturuma ait olmayan** her aktif kayıt kontrol edilir — `Dokunulan alanlar` senin gireceğin dosyalarla kesişiyorsa: **başlama.** Kullanıcıya çakışmayı bildir, ne yapılacağını sor.
+1. **Kimliğini belirle.** Notion hesabı ortak kullanılıyor — kimin çalıştığını *bilmiyor*. Kaynak git kimliğidir:
+
+   ```bash
+   git config user.name
+   ```
+
+   | Değer | `Kişi` |
+   |---|---|
+   | `Mirza Sarıbıyık` | `Mirza` |
+   | `Ömer Faruk Güleç` · `ofgworks` | `Ömer` |
+
+   Değer boşsa veya tabloda yoksa **kullanıcıya sor** — tahmin etme. Yanlış atfedilen bir kayıt sessizce yanlış kalır.
+
+2. **Aktif kayıtları sorgula.** `📓 Oturum Kaydı` → `Durum = "Devam ediyor"` olan tüm satırlar.
+3. **🚦 Kanaryayı doğrula.** Sonuçta `Tür = "Kanarya"` satırı **yoksa** kanal bozuktur: sorgu çalışmış gibi görünüp boş dönmüş olabilir. Kullanıcıya söyle ve **çoklu-ajan işine başlama.** Tek başına çalıştığını kullanıcı teyit ederse devam edilebilir.
+4. **Çakışma kontrolü.** **Bu oturuma ait olmayan** her aktif kayıt kontrol edilir — `Dokunulan alanlar` senin gireceğin dosyalarla kesişiyorsa: **başlama.** Kullanıcıya çakışmayı bildir, ne yapılacağını sor. Kanaryayı bu karşılaştırmaya **katma** (`Tür = "Kanarya"`).
 
    ⚠️ Ölçüt "başkasına ait" **değil**, "bu oturuma ait değil". Her iki geliştirici de hem Claude Code hem Codex kullanıyor; aynı kişinin iki ajanı aynı anda çalışabilir. `Kişi` alanı seninkiyle aynı diye bir kaydı atlarsan, kendi diğer ajanınla çakışırsın — bu en olası çakışma senaryosu, çünkü ikisi çoğu zaman aynı makinede ve aynı çalışma dizinindedir.
-3. **Son 7 günü oku.** Özellikle `Tür = "Devir"` olanları — yarım kalmış iş ve dikkat notları orada.
-4. **Kendi kaydını aç.** `Durum = "Devam ediyor"`, `Görev`, `Branch` ve `Dokunulan alanlar` dolu olacak. Başlık formatı `<tarih> · <kişi> · <ajan> · <DW-ID>` — ajan adı zorunlu, aynı kişinin iki kaydı ancak böyle ayırt edilir.
+5. **Son 7 günü oku.** Özellikle `Tür = "Devir"` olanları — yarım kalmış iş ve dikkat notları orada.
+6. **Kendi kaydını aç.** `Durum = "Devam ediyor"`, `Kişi`, `Görev`, `Branch` ve `Dokunulan alanlar` dolu olacak. Başlık formatı `<tarih> · <kişi> · <ajan> · <DW-ID>` — ajan adı zorunlu, aynı kişinin iki kaydı ancak böyle ayırt edilir.
 
 ```sql
--- Aktif kayıtlar (çakışma kontrolü)
-SELECT "Kayıt", "Kişi", "Ajan", "Branch", "Dokunulan alanlar"
+-- Aktif kayıtlar (çakışma kontrolü + kanarya doğrulaması)
+SELECT "Kayıt", "Kişi", "Ajan", "Tür", "Branch", "Dokunulan alanlar"
 FROM "collection://280e2fd0-a14a-4d2d-ac25-24585472348e"
 WHERE "Durum" = 'Devam ediyor'
 ```
 
+> 🚦 **Kanarya neden var.** Protokol olumsuz bir iddiaya dayanıyor: *"aktif kayıt yok, başlayabilirim."* Ama yanlış data source ID'si, eksik paylaşım ve bozuk filtre — üçü de **boş sonuç** döndürür ve "gerçekten kimse yok" ile ayırt edilemez. Kanarya her zaman orada olduğu için, onu görmek sonucun güvenilir olduğunu kanıtlar.
+
 > ⚠️ **Bu SQL aracı ücretsiz planda saatlik kotalı.** Kota dolarsa sorgu hata döner — bunu "aktif kayıt yok" diye **yorumlama**, protokolün tüm güvencesi bu sorguda.
 >
 > Kota dolduğunda yedek yol: `📓 Oturum Kaydı` data source'una **arama** yap (`data_source_url` parametresiyle), dönen kayıtları tek tek `fetch` ile aç ve `Durum` alanına bak. Daha yavaş ama kotasız. İkisi de başarısızsa kullanıcıya söyle ve çoklu-ajan işine başlama.
+>
+> **Kota bütçesi:** SQL yalnızca bu çakışma sorgusu için harcanır. Raporlama, listeleme, ID kontrolü gibi işler `fetch`/`search` ile yapılır — onlar kotasız. Kolaylık işleriyle tüketilen kota, gerçekten gerektiği anda dolu olur.
 
 ### Oturum SIRASINDA — kapsam büyürse
 
@@ -163,7 +181,7 @@ Dosya adı komut adı olur (`oturum-basla.md` → `/oturum-basla`). Gövdeler bu
    >
    > Bu, hata yapmanı engellemez ama **sessizce** hata yapmanı engeller. Uymayan PR kırmızı olur ve merge edilemez.
 
-8. **Notion'da yeni database veya üst seviye sayfa oluştururken parent'ı her zaman `duo-works` hub sayfası olsun** (`3a79bfc9-3b2e-8104-8f7d-df02d3de4a38`). Ekibin bir üyesi workspace'e **guest** olarak eklenmiş durumda ve guest erişimi sayfa bazındadır — hub ağacının dışında oluşturulan hiçbir şeyi göremez. Bunu yaptıktan sonra kullanıcıya paylaşımı doğrulamasını hatırlat.
+8. **Notion'da yeni database veya üst seviye sayfa oluştururken parent'ı her zaman `duo-works` hub sayfası olsun** (`3a79bfc9-3b2e-8104-8f7d-df02d3de4a38`). Hub ağacının dışına açılan sayfalar dağınık kalır ve keşfedilemez; çalışma alanının tamamı tek ağaçta durur.
 
 ## Kod tarzı
 
