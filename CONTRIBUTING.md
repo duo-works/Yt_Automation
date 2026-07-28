@@ -128,7 +128,8 @@ Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnız
 1. **Notion** → görevi **Yapılıyor**'a al, kendine ata
 2. `main`'i güncelle, branch aç:
    ```bash
-   git switch main && git pull
+   git switch main
+   git pull
    git switch -c feat/DW-42-kullanici-girisi
    ```
 3. Küçük commit'lerle çalış
@@ -142,8 +143,12 @@ Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnız
 7. **Notion** → görevi **Bitti**'ye al
 8. Yerelde temizle:
    ```bash
-   git switch main && git pull && git branch -d feat/DW-42-kullanici-girisi
+   git switch main
+   git pull
+   git branch -d feat/DW-42-kullanici-girisi
    ```
+
+> 💻 **Ekip iki farklı platformda:** macOS/zsh ve Windows/PowerShell 5.1. Dokümanlardaki komutlar bu yüzden **her kabukta çalışacak biçimde** yazılır: komutları `&&` ile zincirlemeyin, ayrı satıra alın (`&&` PowerShell 5.1'de sözdizimi hatası). Karşılığı olmayan bir komut gerekiyorsa (`mkdir -p` gibi) iki blok yazın.
 
 ---
 
@@ -166,7 +171,8 @@ Protokolün tam hali [`AGENTS.md`](AGENTS.md) içindedir — Claude Code ve Code
 Uzun süren bir branch'te çalışıyorsanız günde bir kez `main`'i içine alın:
 
 ```bash
-git switch main && git pull
+git switch main
+git pull
 git switch feat/DW-42-kullanici-girisi
 git merge main
 ```

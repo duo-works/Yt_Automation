@@ -54,7 +54,7 @@ Protokol Notion'a bağlı. Bağlantı yoksa protokol sessizce çalışmaz: "akti
 1. **Notion MCP bağlantısı var mı?** `📓 Oturum Kaydı` data source'una bir sorgu at (aşağıdaki SQL). Hata alıyorsan bağlantı yok.
 2. **Kullanıcı workspace üyesi mi?** Notion kullanıcı listesini çek; kullanıcının adı orada mı bak. Değilse `Kişi` alanı doldurulamaz.
 3. **`📋 Görevler`'e erişim var mı?** DW-ID okuyabiliyor musun? Okuyamıyorsan branch adı kuralı uygulanamaz.
-4. **`main` güncel mi?** `git switch main && git pull`.
+4. **`main` güncel mi?** Sırayla `git switch main` ve `git pull`.
 
 Herhangi biri başarısızsa **çoklu-ajan işine başlama.** Kullanıcıya hangisinin eksik olduğunu söyle ve kurulum rehberine yönlendir: Notion → 📚 Bilgi Bankası → **Ajan Kurulumu**.
 
@@ -159,7 +159,15 @@ Protokolün tekrarlayan adımları komut haline getirildi. Gövdeleri `docs/ajan
 **Codex kullanıyorsan** — repo bazında slash komut desteği yok, aynı dosyalar kişisel prompt dizinine kopyalanır:
 
 ```bash
+mkdir -p ~/.codex/prompts
 cp docs/ajan/komutlar/*.md ~/.codex/prompts/
+```
+
+PowerShell'de (`mkdir -p` orada yok):
+
+```powershell
+New-Item -ItemType Directory -Force ~/.codex/prompts
+Copy-Item docs/ajan/komutlar/*.md ~/.codex/prompts/
 ```
 
 Dosya adı komut adı olur (`oturum-basla.md` → `/oturum-basla`). Gövdeler bu yüzden araç-bağımsız dille yazılmıştır; MCP araç adı geçmez.

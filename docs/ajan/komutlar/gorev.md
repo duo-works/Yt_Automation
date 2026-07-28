@@ -21,7 +21,8 @@ Kontrol et ve gerekiyorsa uyar:
 ## 3. Branch aç
 
 ```bash
-git switch main && git pull
+git switch main
+git pull
 git switch -c <tür>/DW-<numara>-<kisa-aciklama>
 ```
 
