@@ -1,0 +1,47 @@
+[project]
+name = "yt-automation"
+version = "0.1.0"
+description = "Kendi YouTube kanallarımız için yükleme, metadata, thumbnail ve raporlama otomasyonu."
+requires-python = ">=3.13"
+
+dependencies = [
+    # YouTube Data API v3 — yükleme, metadata, thumbnail
+    "google-api-python-client>=2.150",
+    "google-auth-oauthlib>=1.2",
+    "google-auth-httplib2>=0.2",
+    # Video başına metadata dosyaları
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+]
+
+[project.scripts]
+ytoto = "yt_automation.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # sadeleştirme
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
