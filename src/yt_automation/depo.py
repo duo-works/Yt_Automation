@@ -21,6 +21,10 @@ from pathlib import Path
 VARSAYILAN_DIZIN = "veri"
 VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 
+# Şema sürümü — `PRAGMA user_version` ile saklanıyor. Tablo veya indeks
+# eklediğinizde **artırın**, yoksa mevcut veritabanları yeni şemayı almaz.
+SEMA_SURUMU = 1
+
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,12 +104,14 @@ def baglan(yol: Path) -> sqlite3.Connection:
     yol.parent.mkdir(parents=True, exist_ok=True)
     baglanti = sqlite3.connect(yol, isolation_level=None, timeout=30.0)
     baglanti.row_factory = sqlite3.Row
-    # ⚠️ Sıra önemli. `busy_timeout` en başta gelmeli: kendisi kilit istemez ama
-    # ondan sonraki her ifadeye "kilit varsa bekle" davranışını kazandırır.
-    # Sonra gelselerdi WAL geçişi ve şema kurulumu, başka bir yazar kilidi
-    # tutarken beklemek yerine anında `database is locked` ile düşerdi.
+
+    # ⚠️ `busy_timeout` en başta gelmeli: kendisi kilit istemez ama ondan
+    # sonraki ifadelere "kilit varsa bekle" davranışını kazandırır.
     baglanti.execute("PRAGMA busy_timeout=30000")
-    # ⚠️ `journal_mode` geçişi yukarıdaki `busy_timeout`un **istisnası**: özel
+
+    # ⚠️ Aşağıdaki iki blok da **koşullu**, ve bu kritik.
+    #
+    # `journal_mode` geçişi yukarıdaki `busy_timeout`un **istisnası**: özel
     # (exclusive) kilit istiyor ve beklemiyor — başka bağlantı işlemdeyse
     # anında `SQLITE_BUSY` dönüyor. Yani bir üstteki yorumun verdiği "artık
     # beklenir" garantisi tam bu satır için geçerli değil.
@@ -114,17 +120,23 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # geçişi deniyor; biri kazanıyor, kalanı `database is locked` alıyor.
     # Ölçüldü: 32 eşzamanlı bağlantı, 40 turun 2'sinde tetikleniyor (macOS);
     # CI'ın Linux koşucusunda daha sık — `test_esZamanli_harcama_butceyi_asmaz`
-    # oradan düşüyordu.
+    # oradan düşüyordu. Koşul pencereyi daralttı, kapatmadı: kapatan şey
+    # hatanın yutulması.
     #
     # Yarışı kazanmaya çalışmak yanlış çerçeve: WAL **kalıcı bir veritabanı
     # özelliği**, yarışı başkası kazandıysa bizim için de kurulmuş demektir.
-    # Bu yüzden önce okunuyor, gerekiyorsa yazılıyor ve hata yutuluyor.
     if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
         # Kaybetmek zararsız: bu bağlantı bu seferlik eski kip'te çalışır,
         # doğruluk etkilenmez — yalnızca eşzamanlılık.
         with suppress(sqlite3.OperationalError):
             baglanti.execute("PRAGMA journal_mode=WAL")
-    baglanti.executescript(SEMA)
+
+    # Aynı gerekçe şema için: `CREATE TABLE IF NOT EXISTS` var olan tabloda
+    # işe yaramıyor ama yine de yazma kilidi alıyor. `user_version` ucuz bir
+    # okuma; şema yalnızca gerçekten eksikse kuruluyor.
+    if baglanti.execute("PRAGMA user_version").fetchone()[0] < SEMA_SURUMU:
+        baglanti.executescript(SEMA)
+        baglanti.execute(f"PRAGMA user_version = {SEMA_SURUMU}")
     return baglanti
 
 

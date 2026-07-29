@@ -10,7 +10,7 @@ from yt_automation.trend import bolge, toplayici
 
 
 def test_video_ve_olcum_yazilir(yol: Path, sayac, sahte_istemci, video_ogesi, satirlar):
-    istemci = sahte_istemci({("TR", 27): [video_ogesi("v1"), video_ogesi("v2")]})
+    istemci = sahte_istemci({("TR", 28): [video_ogesi("v1"), video_ogesi("v2")]})
     sonuc = toplayici.topla(istemci, sayac, tur="genis", bolgeler=["TR"], yol=yol)
 
     assert sonuc.cagri_sayisi == len(bolge.LISTELER)
@@ -35,7 +35,7 @@ def test_ayni_video_iki_listede_tek_olcum(yol: Path, sayac, sahte_istemci, video
     """
     istemci = sahte_istemci(
         {
-            ("TR", 27): [video_ogesi("dolgu"), video_ogesi("v1")],  # v1 → 2. sıra
+            ("TR", 28): [video_ogesi("dolgu"), video_ogesi("v1")],  # v1 → 2. sıra
             ("TR", 0): [video_ogesi("v1")],  # v1 → 1. sıra, daha iyi
         }
     )
@@ -61,8 +61,8 @@ def test_bir_bolgenin_hatasi_kosuyu_bitirmez(
 ):
     istemci = sahte_istemci(
         {
-            ("TR", 27): RuntimeError("403 quotaExceeded"),
-            ("DE", 27): [video_ogesi("v1")],
+            ("TR", 28): RuntimeError("403 quotaExceeded"),
+            ("DE", 28): [video_ogesi("v1")],
         }
     )
     sonuc = toplayici.topla(istemci, sayac, tur="genis", bolgeler=["TR", "DE"], yol=yol)
@@ -75,7 +75,7 @@ def test_bir_bolgenin_hatasi_kosuyu_bitirmez(
 def test_tum_cagrilar_ayni_an_damgasini_tasir(
     yol: Path, sayac, sahte_istemci, video_ogesi, satirlar
 ):
-    istemci = sahte_istemci({("TR", 27): [video_ogesi("v1")], ("DE", 28): [video_ogesi("v2")]})
+    istemci = sahte_istemci({("TR", 28): [video_ogesi("v1")], ("DE", 28): [video_ogesi("v2")]})
     an = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
     toplayici.topla(istemci, sayac, tur="genis", bolgeler=["TR", "DE"], yol=yol, an=an)
 
@@ -83,11 +83,40 @@ def test_tum_cagrilar_ayni_an_damgasini_tasir(
     assert anlar == {an.isoformat()}, "koşu içindeki tüm ölçümler aynı anı taşımalı"
 
 
+# --- Sır sızıntısı ------------------------------------------------------
+
+
+def test_hata_metninde_api_anahtari_gizlenir(yol: Path, sayac, sahte_istemci, satirlar):
+    """`HttpError` mesajı çağrılan URL'i taşır ve URL'de `key=<anahtar>` vardır.
+
+    İlk canlı taramada bu mesaj olduğu gibi `kosu.hata` sütununa yazıldı —
+    API anahtarı düz metin olarak diske düştü. Regresyonu burada tutuyoruz.
+    """
+    gercekci = (
+        "<HttpError 404 when requesting https://youtube.googleapis.com/youtube/v3/videos"
+        "?part=snippet&chart=mostPopular&regionCode=AE&key=AIzaSyBdxx4MlAKoVwxRvSR2mIP9bM8V"
+        '&alt=json returned "Requested entity was not found.">'
+    )
+    istemci = sahte_istemci({("AE", 28): RuntimeError(gercekci)})
+    sonuc = toplayici.topla(istemci, sayac, tur="genis", bolgeler=["AE"], yol=yol)
+
+    assert "AIzaSy" not in sonuc.hatalar[0]
+    assert "key=<gizlendi>" in sonuc.hatalar[0]
+    # Asıl önemlisi: diske yazılan da temiz olmalı.
+    assert "AIzaSy" not in (satirlar("SELECT hata FROM kosu")[0]["hata"] or "")
+    # Teşhis bilgisi korunmalı — gizleme hatayı okunmaz yapmamalı.
+    assert "404" in sonuc.hatalar[0] and "AE" in sonuc.hatalar[0]
+
+
+def test_gizle_anahtarsiz_metni_bozmaz():
+    assert toplayici.gizle("AE/28: bağlantı zaman aşımı") == "AE/28: bağlantı zaman aşımı"
+
+
 # --- Kota ---------------------------------------------------------------
 
 
 def test_cagri_basina_bir_birim(yol: Path, sayac, sahte_istemci, video_ogesi):
-    istemci = sahte_istemci({("TR", 27): [video_ogesi("v1")]})
+    istemci = sahte_istemci({("TR", 28): [video_ogesi("v1")]})
     sonuc = toplayici.topla(istemci, sayac, tur="genis", bolgeler=["TR", "DE"], yol=yol)
 
     beklenen = 2 * len(bolge.LISTELER)
@@ -97,7 +126,7 @@ def test_cagri_basina_bir_birim(yol: Path, sayac, sahte_istemci, video_ogesi):
 
 
 def test_trend_tavani_kosuyu_temiz_durdurur(yol: Path, sayac, sahte_istemci, video_ogesi, satirlar):
-    istemci = sahte_istemci({("TR", 27): [video_ogesi("v1")]})
+    istemci = sahte_istemci({("TR", 28): [video_ogesi("v1")]})
     sonuc = toplayici.topla(
         istemci, sayac, tur="genis", bolgeler=["TR", "DE", "FR"], yol=yol, trend_tavani=4
     )
@@ -112,7 +141,7 @@ def test_rezerve_yukleme_payini_korur(yol: Path, sahte_istemci, video_ogesi):
     """Ortak bütçe yükleme payına inince trend toplamayı bırakır."""
     butce = kota.video_basina_maliyet() + 2
     sayac = kota.KaliciSayac(yol, butce=butce, surec="trend")
-    istemci = sahte_istemci({("TR", 27): [video_ogesi("v1")]})
+    istemci = sahte_istemci({("TR", 28): [video_ogesi("v1")]})
 
     sonuc = toplayici.topla(istemci, sayac, tur="genis", bolgeler=["TR", "DE"], yol=yol)
 
@@ -148,7 +177,7 @@ def test_eksik_istatistik_cokmez(yol: Path, sayac, sahte_istemci, video_ogesi, s
     """Gizli beğeni/yorum sayısında alanlar hiç gelmiyor."""
     oge = video_ogesi("v1")
     oge["statistics"] = {"viewCount": "500"}
-    istemci = sahte_istemci({("TR", 27): [oge]})
+    istemci = sahte_istemci({("TR", 28): [oge]})
     toplayici.topla(istemci, sayac, tur="genis", bolgeler=["TR"], yol=yol)
 
     o = satirlar("SELECT * FROM olcum")[0]
