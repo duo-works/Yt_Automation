@@ -15,6 +15,9 @@ dependencies = [
     # macOS'ta sistem tz veritabanı var; Windows'ta yok ve `zoneinfo`
     # ZoneInfoNotFoundError fırlatıyor. Ekipte Windows kullanan var.
     "tzdata; sys_platform == 'win32'",
+    # Konu sınıflandırması — Wikidata'nın karar veremediği kuyruk için.
+    # Gerekçe ve kabul edilen kısıtlar: docs/decisions/0006-llm-siniflandirma.md
+    "anthropic>=0.60",
 ]
 
 [project.optional-dependencies]
