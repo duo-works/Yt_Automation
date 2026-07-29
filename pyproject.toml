@@ -11,6 +11,10 @@ dependencies = [
     "google-auth-httplib2>=0.2",
     # Video başına metadata dosyaları
     "pyyaml>=6.0",
+    # Kota Pasifik gece yarısı sıfırlanıyor → `zoneinfo` gerekiyor. Linux ve
+    # macOS'ta sistem tz veritabanı var; Windows'ta yok ve `zoneinfo`
+    # ZoneInfoNotFoundError fırlatıyor. Ekipte Windows kullanan var.
+    "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

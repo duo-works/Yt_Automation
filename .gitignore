@@ -51,6 +51,12 @@ venv/
 htmlcov/
 .coverage
 
+# --- Yerel durum deposu (kota defteri, trend zaman serisi) ---
+veri/
+*.db
+*.db-wal
+*.db-shm
+
 # --- Genel ---
 *.log
 tmp/
