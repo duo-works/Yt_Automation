@@ -26,7 +26,8 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 #
 # 1 → kota defteri + YouTube trend tabloları
 # 2 → Wikipedia makale/okunma tabloları (DW-34)
-SEMA_SURUMU = 2
+# 3 → kaynak dosyası: referans, olgu, görsel (DW-37)
+SEMA_SURUMU = 3
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -113,6 +114,27 @@ CREATE TABLE IF NOT EXISTS okunma (
 );
 
 CREATE INDEX IF NOT EXISTS okunma_gun ON okunma(gun);
+
+-- Bir adayın kaynak dosyası: videodaki iddiaların dayanağı.
+--
+-- PRD'nin YPP karşı önlemlerinin birincisi "her videonun altında gerçek bir
+-- kaynak" diyor. Diğer tablolar konu **seçiyor**; bu tablo seçilen konunun
+-- neye dayanacağını tutuyor.
+--
+-- `qid` üzerinden anahtarlanıyor, (dil, baslik) üzerinden değil: aynı konu
+-- her dilde ayrı makale ama kaynaklar ortak. Bir kez çekilir, hepsi kullanır.
+CREATE TABLE IF NOT EXISTS kaynak (
+    qid      TEXT NOT NULL,
+    tur      TEXT NOT NULL,  -- referans | olgu | gorsel
+    deger    TEXT NOT NULL,  -- URL, olgu metni ya da dosya adı
+    etiket   TEXT,           -- olgunun ne olduğu ("kuruluş tarihi")
+    atif     TEXT,           -- görselde zorunlu: kime atıf verilecek
+    lisans   TEXT,           -- görselde zorunlu: boşsa kullanılmaz
+    cekilme  TEXT NOT NULL,
+    PRIMARY KEY (qid, tur, deger)
+);
+
+CREATE INDEX IF NOT EXISTS kaynak_qid ON kaynak(qid);
 """
 
 
