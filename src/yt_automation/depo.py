@@ -163,25 +163,29 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # sonraki ifadelere "kilit varsa bekle" davranışını kazandırır.
     baglanti.execute("PRAGMA busy_timeout=30000")
 
-    # ⚠️ Aşağıdaki iki blok da **koşullu**, ve bu kritik.
+    # ⚠️ `journal_mode` değişimi özel (exclusive) kilit istiyor ve
+    # `busy_timeout`u **onurlandırmıyor**: başka bağlantı işlemdeyse beklemeden
+    # `SQLITE_BUSY` döner. Bu satır iki kez "düzeltildi" ve iki kez geri geldi:
     #
-    # `journal_mode` geçişi yukarıdaki `busy_timeout`un **istisnası**: özel
-    # (exclusive) kilit istiyor ve beklemiyor — başka bağlantı işlemdeyse
-    # anında `SQLITE_BUSY` dönüyor. Yani bir üstteki yorumun verdiği "artık
-    # beklenir" garantisi tam bu satır için geçerli değil.
+    #   1. Pragma sırası düzeltildi (busy_timeout önce)     → 25 iş parçacığında düştü
+    #   2. Koşullu hale getirildi (önce oku, gerekiyorsa yaz) → yeni veritabanında düştü
     #
-    # Taze bir dosyada tüm bağlantılar aynı anda "WAL değil" görüp hepsi
-    # geçişi deniyor; biri kazanıyor, kalanı `database is locked` alıyor.
-    # Ölçüldü: 32 eşzamanlı bağlantı, 40 turun 2'sinde tetikleniyor (macOS);
-    # CI'ın Linux koşucusunda daha sık — `test_esZamanli_harcama_butceyi_asmaz`
-    # oradan düşüyordu. Koşul pencereyi daralttı, kapatmadı: kapatan şey
-    # hatanın yutulması.
+    # İkincisinin kaçırdığı: **yeni** bir dosyada tüm bağlantılar aynı anda
+    # "WAL değil" görüyor ve hepsi geçişi deniyor. Koşul pencereyi daralttı,
+    # kapatmadı — kapatan şey hatanın yutulması.
     #
-    # Yarışı kazanmaya çalışmak yanlış çerçeve: WAL **kalıcı bir veritabanı
-    # özelliği**, yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Ölçüldü (DW-50): 32 eşzamanlı bağlantı, bariyerle senkron, 1280 açma →
+    # kusurlu kodda 1 × `database is locked`. CI'ın Linux koşucusunda daha
+    # sık: `test_esZamanli_harcama_butceyi_asmaz` oradan düşüyordu.
+    # Regresyon testi `tests/test_depo.py`'de ve yarışı beklemiyor, kilidi
+    # kendisi tutuyor — bu hatayı olasılığa bağlı bir test üç kez kaçırdı.
+    #
+    # Yarışı kazanmaya çalışmak yanlış çerçeve. WAL **kalıcı bir veritabanı
+    # özelliği**: yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Bu yüzden hata yutuluyor — kaybetmek zararsız.
     if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
-        # Kaybetmek zararsız: bu bağlantı bu seferlik eski kip'te çalışır,
-        # doğruluk etkilenmez — yalnızca eşzamanlılık.
+        # Bu bağlantı bu seferlik eski kip'te çalışır; doğruluk etkilenmez,
+        # yalnızca eşzamanlılık.
         with suppress(sqlite3.OperationalError):
             baglanti.execute("PRAGMA journal_mode=WAL")
 
