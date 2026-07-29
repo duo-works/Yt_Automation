@@ -131,6 +131,39 @@ def makale_serisi(dil: str, baslik: str, bas: date, son: date) -> list[Okunma]:
     ]
 
 
+def ozetleri_getir(dil: str, basliklar: list[str]) -> dict[str, str]:
+    """Makale başlığı → giriş paragrafı. Toplu, 20'lik gruplar.
+
+    Sınıflandırma için başlık tek başına yetmiyor: "Homer" antik Yunan şairi
+    de olabilir Simpson da, "Paul Newman" ismi mesleğini söylemiyor. Giriş
+    paragrafı ikisini de tek cümlede çözüyor ve **ücretsiz** — LLM'e giden
+    isteme bu bağlamı eklemek, doğruluğu kayda değer artırıyor.
+    """
+    ozetler: dict[str, str] = {}
+    for i in range(0, len(basliklar), 20):  # `exlimit` üst sınırı 20
+        grup = basliklar[i : i + 20]
+        url = (
+            f"https://{dil}.wikipedia.org/w/api.php?action=query&prop=extracts"
+            f"&exintro=1&explaintext=1&exlimit=20&format=json&redirects=1&titles="
+            + urllib.parse.quote("|".join(grup), safe="|")
+        )
+        try:
+            veri = _cek(url).get("query", {})
+        except WikipediaHatasi:
+            continue  # Özet olmadan da sınıflandırılabilir, sadece daha zor.
+
+        takma: dict[str, str] = {}
+        for anahtar in ("normalized", "redirects"):
+            for kayit in veri.get(anahtar, []):
+                takma[kayit["to"]] = takma.get(kayit["from"], kayit["from"])
+
+        for sayfa in veri.get("pages", {}).values():
+            if metin := (sayfa.get("extract") or "").strip():
+                baslik = sayfa.get("title", "")
+                ozetler[takma.get(baslik, baslik)] = metin
+    return ozetler
+
+
 def son_yayimlanan_gun(bugun: date | None = None) -> date:
     """Verisi hazır olması beklenen en son gün.
 
