@@ -21,6 +21,10 @@ from pathlib import Path
 VARSAYILAN_DIZIN = "veri"
 VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 
+# Şema sürümü — `PRAGMA user_version` ile saklanıyor. Tablo veya indeks
+# eklediğinizde **artırın**, yoksa mevcut veritabanları yeni şemayı almaz.
+SEMA_SURUMU = 1
+
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
     id     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,14 +104,27 @@ def baglan(yol: Path) -> sqlite3.Connection:
     yol.parent.mkdir(parents=True, exist_ok=True)
     baglanti = sqlite3.connect(yol, isolation_level=None, timeout=30.0)
     baglanti.row_factory = sqlite3.Row
-    # ⚠️ Sıra önemli. `busy_timeout` en başta gelmeli: kendisi kilit istemez ama
-    # ondan sonraki her ifadeye "kilit varsa bekle" davranışını kazandırır.
-    # Sonra gelselerdi WAL geçişi ve şema kurulumu, başka bir yazar kilidi
-    # tutarken beklemek yerine anında `database is locked` ile düşerdi.
+
+    # ⚠️ `busy_timeout` en başta gelmeli: kendisi kilit istemez ama ondan
+    # sonraki ifadelere "kilit varsa bekle" davranışını kazandırır.
     baglanti.execute("PRAGMA busy_timeout=30000")
-    # WAL kalıcı bir veritabanı özelliği; okuyucuların yazarı beklememesini sağlar.
-    baglanti.execute("PRAGMA journal_mode=WAL")
-    baglanti.executescript(SEMA)
+
+    # ⚠️ Aşağıdaki iki blok da **koşullu**, ve bu kritik.
+    #
+    # `journal_mode` değişimi özel (exclusive) kilit istiyor ve `busy_timeout`u
+    # tam onurlandırmıyor: başka bir bağlantı işlem içindeyse beklemeden
+    # `SQLITE_BUSY` dönüyor. Her bağlantıda koşulsuz çağırmak, yük altında
+    # `database is locked` üretiyordu. WAL kalıcı bir veritabanı özelliği,
+    # yani bir kez kurulması yeterli — önce okuyup gerekiyorsa yazıyoruz.
+    if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
+        baglanti.execute("PRAGMA journal_mode=WAL")
+
+    # Aynı gerekçe şema için: `CREATE TABLE IF NOT EXISTS` var olan tabloda
+    # işe yaramıyor ama yine de yazma kilidi alıyor. `user_version` ucuz bir
+    # okuma; şema yalnızca gerçekten eksikse kuruluyor.
+    if baglanti.execute("PRAGMA user_version").fetchone()[0] < SEMA_SURUMU:
+        baglanti.executescript(SEMA)
+        baglanti.execute(f"PRAGMA user_version = {SEMA_SURUMU}")
     return baglanti
 
 

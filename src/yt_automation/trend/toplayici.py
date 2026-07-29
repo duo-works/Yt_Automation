@@ -11,6 +11,7 @@ API istemcisi dışarıdan geçirilir — testler sahte istemci verir, CI canlı
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,17 @@ from .. import depo, kota
 from . import bolge
 
 ISLEM = "videos.list"
+
+# `HttpError` mesajı çağrılan URL'in tamamını taşıyor ve URL'de `key=<anahtar>`
+# var. Bu mesaj hem stderr'e basılıyor hem `kosu.hata` sütununa yazılıyor —
+# yani temizlenmezse API anahtarı düz metin olarak diske düşer. Bu, ilk canlı
+# koşumda fiilen gerçekleşti.
+_ANAHTAR_DESENI = re.compile(r"(key=)[A-Za-z0-9_\-]+")
+
+
+def gizle(metin: str) -> str:
+    """Hata metnindeki API anahtarını maskeler."""
+    return _ANAHTAR_DESENI.sub(r"\1<gizlendi>", metin)
 
 
 @dataclass
@@ -189,7 +201,7 @@ def topla(
             try:
                 ogeler = _cek(istemci, bolge_kodu, liste)
             except Exception as hata:  # noqa: BLE001 — tek bölge koşuyu bitirmemeli
-                sonuc.hatalar.append(f"{bolge_kodu}/{liste}: {hata}")
+                sonuc.hatalar.append(gizle(f"{bolge_kodu}/{liste}: {hata}"))
                 continue
 
             if not ogeler:

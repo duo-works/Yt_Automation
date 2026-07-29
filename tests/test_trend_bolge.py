@@ -27,11 +27,14 @@ def test_yogunluga_gore_siralanir(yol: Path, sayac, sahte_istemci, video_ogesi):
     """Sıralama eğitim/bilim video sayısına göre — toplam hacme göre değil."""
     istemci = sahte_istemci(
         {
-            # DE: 3 eğitim
-            ("DE", 27): [video_ogesi(f"de{i}", kategori="27") for i in range(3)],
+            # DE: 3 eğitim — kısıtsız listeden geliyor, çünkü 27'nin çartı yok
+            ("DE", 0): [video_ogesi(f"de{i}", kategori="27") for i in range(3)],
             # TR: 1 eğitim + 2 müzik → yoğunluk 1, hacim 3
-            ("TR", 27): [video_ogesi("tr1", kategori="27")],
-            ("TR", 0): [video_ogesi("trm1", kategori="10"), video_ogesi("trm2", kategori="10")],
+            ("TR", 0): [
+                video_ogesi("tr1", kategori="27"),
+                video_ogesi("trm1", kategori="10"),
+                video_ogesi("trm2", kategori="10"),
+            ],
             # FR: 2 bilim
             ("FR", 28): [video_ogesi(f"fr{i}", kategori="28") for i in range(2)],
         }
@@ -45,7 +48,7 @@ def test_yogunluga_gore_siralanir(yol: Path, sayac, sahte_istemci, video_ogesi):
 def test_yalnizca_son_genis_kosu_sayilir(yol: Path, sayac, sahte_istemci, video_ogesi):
     """Eski koşular sıralamayı kirletmemeli — bölge tercihi güncel veriye dayanır."""
     toplayici.topla(
-        sahte_istemci({("TR", 27): [video_ogesi(f"t{i}", kategori="27") for i in range(5)]}),
+        sahte_istemci({("TR", 0): [video_ogesi(f"t{i}", kategori="27") for i in range(5)]}),
         sayac,
         tur="genis",
         bolgeler=["TR"],
@@ -53,7 +56,7 @@ def test_yalnizca_son_genis_kosu_sayilir(yol: Path, sayac, sahte_istemci, video_
         an=datetime(2026, 7, 1, tzinfo=UTC),
     )
     toplayici.topla(
-        sahte_istemci({("DE", 27): [video_ogesi("d1", kategori="27")]}),
+        sahte_istemci({("DE", 0): [video_ogesi("d1", kategori="27")]}),
         sayac,
         tur="genis",
         bolgeler=["DE"],
@@ -71,7 +74,7 @@ def test_derin_kosu_siralamayi_kaydirmaz(yol: Path, sayac, sahte_istemci, video_
     bölgeleri okur, onlar daha da öne çıkar ve kapsam bir daha genişlemez.
     """
     toplayici.topla(
-        sahte_istemci({("DE", 27): [video_ogesi("d1", kategori="27")]}),
+        sahte_istemci({("DE", 0): [video_ogesi("d1", kategori="27")]}),
         sayac,
         tur="genis",
         bolgeler=["DE"],
@@ -79,7 +82,7 @@ def test_derin_kosu_siralamayi_kaydirmaz(yol: Path, sayac, sahte_istemci, video_
         an=datetime(2026, 7, 29, 9, tzinfo=UTC),
     )
     toplayici.topla(
-        sahte_istemci({("FR", 27): [video_ogesi(f"f{i}", kategori="27") for i in range(9)]}),
+        sahte_istemci({("FR", 0): [video_ogesi(f"f{i}", kategori="27") for i in range(9)]}),
         sayac,
         tur="derin",
         bolgeler=["FR"],

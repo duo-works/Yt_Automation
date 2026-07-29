@@ -14,22 +14,32 @@ from .. import depo
 
 # Çekilecek listeler. Her biri bölge başına bir `videos.list` çağrısı = 1 birim.
 #
-# ⚠️ YouTube'da **Tarih diye bir kategori yok.** Tarih içeriği Eğitim (27)
-# altında yaşıyor, taşanı People & Blogs (22), Entertainment (24) ve News (25)
-# içinde. O üçünü ayrı ayrı çekmek bölge başına 150 satır getirir ve neredeyse
-# tamamı alakasız olur.
+# ⚠️ **Eğitim (27) burada yok ve bu bir eksiklik değil, ölçülmüş bir gerçek.**
+# `chart=mostPopular` her kategori için mevcut değil; 27 istendiğinde API
+# HTTP 404 "Requested entity was not found" döndürüyor. İlk canlı taramada
+# 111 bölgenin 111'inde de aynı hata çıktı. 2026-07-29'da tek tek denendi:
+# 0, 22, 24, 25, 26, 28 çalışıyor — **yalnızca 27 çalışmıyor.**
 #
-# Bunun yerine kısıtsız liste (0) çekiliyor: taşan tarih/bilim içeriğini
-# *zaten genel trend olduğu için* yakalar, çöp getirmeden. Kategoriye göre
-# ayıklama DW-30'un işi.
+# ⚠️ Ayrıca YouTube'da **Tarih diye bir kategori hiç yok.** Tarih içeriği
+# normalde Eğitim altında yaşar; o çart da olmadığına göre tarihi kategoriyle
+# bulmanın yolu kalmıyor.
+#
+# 22/24/25 eklemek çözmüyor: kategoriye göre filtrelenmiş bir çart yalnızca o
+# kategorideki videoları döndürür, yani içlerinden tarihi *kategoriyle* ayıklamak
+# mümkün değil. Sınıflandırıcı (DW-30) gelmeden oraya girmek, bölge başına 150
+# satır çöp depolamak olur. O yüzden liste seti DW-30'da yeniden değerlendirilecek.
 LISTELER: tuple[int, ...] = (
-    27,  # Education
-    28,  # Science & Technology
+    28,  # Science & Technology — çartı var, doğrudan ilgili
     0,  # kısıtsız — kategorisi ne olursa olsun o bölgede trend olanlar
 )
 
 # Sınıflandırıcı (DW-30) gelene kadar "ilgili" saydığımız kategoriler.
 # Derin tarama bölgelerini sıralamak için yeterli: kategori bedava, LLM değil.
+#
+# 27 burada var ama `LISTELER`'de yok — çelişki değil: bu küme videonun
+# **kendi** kategorisine bakıyor, hangi çarttan geldiğine değil. Eğitim
+# videoları kısıtsız listeden geliyor (ilk taramada 46 tane) ve bir bölgenin
+# eğitim yoğunluğunu ölçerken onları saymamak yanlış olurdu.
 ILGILI_KATEGORILER: tuple[int, ...] = (27, 28)
 
 DERIN_BOLGE_SAYISI = 20
