@@ -39,9 +39,7 @@ def _dogrula(dizin: Path, kanal_kimligi: str) -> int:
         print(f"{dizin} içinde yüklenecek video yok.")
         return 0
 
-    tahmin = sum(
-        kota.video_basina_maliyet(thumbnail=v.thumbnail is not None) for v in kuyruk
-    )
+    tahmin = sum(kota.video_basina_maliyet(thumbnail=v.thumbnail is not None) for v in kuyruk)
 
     print(f"Kanal: {profil.ad} (cocuk_icerigi={profil.cocuk_icerigi})")
     print(f"Kuyruk: {len(kuyruk)} video\n")
@@ -138,9 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     kapsam.add_argument(
         "--genis", action="store_true", help="Desteklenen tüm bölgeler (günde bir kez)"
     )
-    kapsam.add_argument(
-        "--derin", action="store_true", help="En umut verici bölgeler (saatlik)"
-    )
+    kapsam.add_argument("--derin", action="store_true", help="En umut verici bölgeler (saatlik)")
     topla.add_argument(
         "--adet",
         type=int,
