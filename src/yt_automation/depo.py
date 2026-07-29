@@ -32,6 +32,51 @@ CREATE TABLE IF NOT EXISTS kota_harcama (
 );
 
 CREATE INDEX IF NOT EXISTS kota_harcama_gun ON kota_harcama(gun);
+
+-- Bir videonun değişmeyen bilgisi. Aynı video onlarca bölgede ve her koşuda
+-- yeniden görünür; burada bir kez durur.
+CREATE TABLE IF NOT EXISTS video (
+    video_id        TEXT PRIMARY KEY,
+    baslik          TEXT NOT NULL,
+    kanal_id        TEXT,
+    kanal_adi       TEXT,
+    yayin_zamani    TEXT,     -- UTC, ISO 8601
+    kategori_id     INTEGER,  -- YouTube'un videoya atadığı kategori
+    sure_sn         INTEGER,
+    dil             TEXT,     -- DW-30 dolduracak
+    dil_kaynagi     TEXT,     -- defaultAudioLanguage | defaultLanguage | llm
+    konu_etiketleri TEXT,     -- JSON dizi, topicDetails.topicCategories
+    sinif           TEXT,     -- DW-30 dolduracak: tarih | bilim | diger
+    sinif_kaynagi   TEXT,     -- kategori | konu | llm
+    ilk_gorulme     TEXT NOT NULL
+);
+
+-- Zaman serisi: bir videonun bir bölgede, bir koşu anındaki durumu.
+-- DW-29'un hız/ivme hesabı bu tablodan türetilecek.
+CREATE TABLE IF NOT EXISTS olcum (
+    video_id       TEXT    NOT NULL,
+    bolge          TEXT    NOT NULL,
+    an             TEXT    NOT NULL,  -- koşu zamanı (UTC); tüm çağrılar aynı değeri taşır
+    liste_kategori INTEGER,           -- hangi listede göründü (0 = kısıtsız)
+    sira           INTEGER,
+    izlenme        INTEGER,
+    begeni         INTEGER,
+    yorum          INTEGER,
+    PRIMARY KEY (video_id, bolge, an)
+);
+
+CREATE INDEX IF NOT EXISTS olcum_an ON olcum(an);
+CREATE INDEX IF NOT EXISTS olcum_video ON olcum(video_id);
+
+-- Koşu defteri: ne zaman, ne kadar bölge, kaç çağrı, kaç birim, kaç hata.
+CREATE TABLE IF NOT EXISTS kosu (
+    an            TEXT PRIMARY KEY,
+    tur           TEXT NOT NULL,  -- genis | derin
+    bolge_sayisi  INTEGER,
+    cagri_sayisi  INTEGER,
+    harcanan_kota INTEGER,
+    hata          TEXT            -- boşsa hatasız; doluysa "<sayı> bölge: <örnek>"
+);
 """
 
 
