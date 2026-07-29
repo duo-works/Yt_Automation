@@ -163,15 +163,27 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # sonraki ifadelere "kilit varsa bekle" davranışını kazandırır.
     baglanti.execute("PRAGMA busy_timeout=30000")
 
-    # ⚠️ Aşağıdaki iki blok da **koşullu**, ve bu kritik.
+    # ⚠️ `journal_mode` değişimi özel (exclusive) kilit istiyor ve
+    # `busy_timeout`u **onurlandırmıyor**: başka bağlantı işlemdeyse beklemeden
+    # `SQLITE_BUSY` döner. Bu satır iki kez "düzeltildi" ve iki kez geri geldi:
     #
-    # `journal_mode` değişimi özel (exclusive) kilit istiyor ve `busy_timeout`u
-    # tam onurlandırmıyor: başka bir bağlantı işlem içindeyse beklemeden
-    # `SQLITE_BUSY` dönüyor. Her bağlantıda koşulsuz çağırmak, yük altında
-    # `database is locked` üretiyordu. WAL kalıcı bir veritabanı özelliği,
-    # yani bir kez kurulması yeterli — önce okuyup gerekiyorsa yazıyoruz.
+    #   1. Pragma sırası düzeltildi (busy_timeout önce)     → 25 iş parçacığında düştü
+    #   2. Koşullu hale getirildi (önce oku, gerekiyorsa yaz) → yeni veritabanında düştü
+    #
+    # İkincisinin kaçırdığı: **yeni** bir dosyada tüm bağlantılar aynı anda
+    # "WAL değil" görüyor ve hepsi geçişi deniyor. Koşul pencereyi daralttı,
+    # kapatmadı.
+    #
+    # Yarışı kazanmaya çalışmak yanlış çerçeve. WAL **kalıcı bir veritabanı
+    # özelliği**: yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Bu yüzden hata yutuluyor — kaybetmek zararsız.
     if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
-        baglanti.execute("PRAGMA journal_mode=WAL")
+        try:
+            baglanti.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            # Başka bir bağlantı tam bu anda kuruyor. Bu bağlantı bu seferlik
+            # eski kip'te çalışır — doğruluk etkilenmez, yalnızca eşzamanlılık.
+            pass
 
     # Aynı gerekçe şema için: `CREATE TABLE IF NOT EXISTS` var olan tabloda
     # işe yaramıyor ama yine de yazma kilidi alıyor. `user_version` ucuz bir
