@@ -14,8 +14,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__, kanal, kota
+from . import __version__, kanal, kota, oauth
+from .kota import KotaAsimi
 from .video import MetadataHatasi, kuyrugu_oku
+from .yukleyici import YuklemeDogrulamaHatasi, yukle_ve_dogrula
 
 
 def _dogrula(dizin: Path, kanal_kimligi: str) -> int:
@@ -30,9 +32,7 @@ def _dogrula(dizin: Path, kanal_kimligi: str) -> int:
         print(f"{dizin} içinde yüklenecek video yok.")
         return 0
 
-    tahmin = sum(
-        kota.video_basina_maliyet(thumbnail=v.thumbnail is not None) for v in kuyruk
-    )
+    tahmin = sum(kota.video_basina_maliyet(thumbnail=v.thumbnail is not None) for v in kuyruk)
 
     print(f"Kanal: {profil.ad} (cocuk_icerigi={profil.cocuk_icerigi})")
     print(f"Kuyruk: {len(kuyruk)} video\n")
@@ -54,6 +54,22 @@ def _dogrula(dizin: Path, kanal_kimligi: str) -> int:
     return 0
 
 
+def _yukle(dizin: Path, kanal_kimligi: str) -> int:
+    try:
+        profil = kanal.getir(kanal_kimligi)
+        kuyruk = kuyrugu_oku(dizin, profil)
+        servis = oauth.servis_olustur()
+        sayac = kota.Sayac()
+        for video in kuyruk:
+            video_id = yukle_ve_dogrula(video, profil, servis, sayac)
+            print(f"Yüklendi ve doğrulandı: {video.baslik} — {video_id}")
+        print(f"Kota: {sayac.ozet()}")
+        return 0
+    except (KeyError, MetadataHatasi, KotaAsimi, YuklemeDogrulamaHatasi) as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ayristirici = argparse.ArgumentParser(
         prog="ytoto",
@@ -69,9 +85,15 @@ def main(argv: list[str] | None = None) -> int:
     dogrula.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
     dogrula.add_argument("--kanal", default="cocuk", help="Kanal kimliği (varsayılan: cocuk)")
 
+    yukle = altlar.add_parser("yukle", help="Kuyruktaki videoları yükle ve bayrakları doğrula")
+    yukle.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
+    yukle.add_argument("--kanal", default="cocuk", help="Kanal kimliği (varsayılan: cocuk)")
+
     args = ayristirici.parse_args(argv)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
+    if args.komut == "yukle":
+        return _yukle(args.dizin, args.kanal)
     return 1
 
 

@@ -6,6 +6,12 @@ Girdi biçimi PRD'de karara bağlandı: her videonun yanında aynı adlı bir
     videolar/2026-08-01-bolum-01.mp4
     videolar/2026-08-01-bolum-01.yaml
 
+Metadata örneği::
+
+    baslik: İlk bölüm
+    # Offset yoksa Europe/Istanbul kabul edilir; açık offset korunur.
+    yayin_tarihi: 2026-08-01T18:00:00
+
 Doğrulama **yüklemeden önce** yapılır. Sebebi kota: `videos.insert` 1.600
 birim ve reddedilen bir istek de bu birimi harcar. Biçim hatasını API'ye
 sordurmak, günlük 10.000 birimin altıda birini bir yazım hatasına vermek olur.
@@ -14,8 +20,9 @@ sordurmak, günlük 10.000 birimin altıda birini bir yazım hatasına vermek ol
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -27,6 +34,7 @@ ACIKLAMA_MAKS = 5000
 ETIKET_TOPLAM_MAKS = 500
 
 VIDEO_UZANTILARI = (".mp4", ".mov", ".mkv", ".webm", ".avi")
+VARSAYILAN_SAAT_DILIMI = ZoneInfo("Europe/Istanbul")
 
 
 class MetadataHatasi(ValueError):
@@ -84,6 +92,18 @@ def _tarih_coz(deger: object) -> datetime | None:
         f"yayin_tarihi: tarih-saat bekleniyordu, {deger!r} geldi "
         "— YAML'de tırnaksız ISO biçimi kullanın (2026-08-01T18:00:00)"
     )
+
+
+def yayin_tarihini_utc(deger: datetime) -> datetime:
+    """Yayın tarihini UTC'ye çevirir.
+
+    Offset içermeyen YAML tarihleri Europe/Istanbul kabul edilir. Açık offset
+    verilmişse o offset korunarak UTC'ye çevrilir. YouTube ``publishAt`` için
+    RFC 3339 ve UTC bekler.
+    """
+    if deger.tzinfo is None:
+        deger = deger.replace(tzinfo=VARSAYILAN_SAAT_DILIMI)
+    return deger.astimezone(UTC)
 
 
 def oku(metadata_yolu: Path, kanal: Kanal) -> Video:
