@@ -23,7 +23,10 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 
 # Şema sürümü — `PRAGMA user_version` ile saklanıyor. Tablo veya indeks
 # eklediğinizde **artırın**, yoksa mevcut veritabanları yeni şemayı almaz.
-SEMA_SURUMU = 1
+#
+# 1 → kota defteri + YouTube trend tabloları
+# 2 → Wikipedia makale/okunma tabloları (DW-34)
+SEMA_SURUMU = 2
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -81,6 +84,35 @@ CREATE TABLE IF NOT EXISTS kosu (
     harcanan_kota INTEGER,
     hata          TEXT            -- boşsa hatasız; doluysa "<sayı> bölge: <örnek>"
 );
+
+-- Wikipedia makalesi. Anahtar (dil, başlık): aynı konu her dilde ayrı satır,
+-- çünkü okunma da dil bazında. Diller arası bağ `qid` üzerinden kurulur.
+CREATE TABLE IF NOT EXISTS makale (
+    dil           TEXT NOT NULL,
+    baslik        TEXT NOT NULL,
+    qid           TEXT,     -- Wikidata kimliği; diller arası ortak kimlik
+    turler        TEXT,     -- JSON, Wikidata P31/P279 kimlikleri
+    sinif         TEXT,     -- tarih | bilim | diger | belirsiz
+    sinif_kaynagi TEXT,     -- wikidata | llm
+    ilk_gorulme   TEXT NOT NULL,
+    PRIMARY KEY (dil, baslik)
+);
+
+CREATE INDEX IF NOT EXISTS makale_qid ON makale(qid);
+CREATE INDEX IF NOT EXISTS makale_sinif ON makale(sinif);
+
+-- Günlük okunma serisi. Wikipedia gün bazında yayımlıyor, saat bazında değil —
+-- hız/ivme hesabının çözünürlüğü bu yüzden bir gün.
+CREATE TABLE IF NOT EXISTS okunma (
+    dil     TEXT    NOT NULL,
+    baslik  TEXT    NOT NULL,
+    gun     TEXT    NOT NULL,  -- YYYY-AA-GG
+    okunma  INTEGER NOT NULL,
+    sira    INTEGER,           -- o günün listesindeki yeri; seri çekiminde boş
+    PRIMARY KEY (dil, baslik, gun)
+);
+
+CREATE INDEX IF NOT EXISTS okunma_gun ON okunma(gun);
 """
 
 
