@@ -13,6 +13,16 @@
   tabanlı tetik laptop kapalıysa o saati atlar ve bir sonraki saati bekler;
   aralık tabanlı tetik uyanışta hemen çalışır. `mostPopular` yaklaşık saatlik
   tazelendiği için 3600 saniyeden sık örneklemenin bilgi getirisi yok.
+
+  ⚠️ Üç yol birbirinden AYRI ve bu ayrım ADR-0008'in kararı:
+    · __CALISMA__ → kod. Sabit ref'e iğnelenmiş worktree; geliştirme ağacı dal
+      değiştirince buradaki dosyalar kaybolmaz. Ayrılmadan önce tam bu oldu:
+      2026-07-30'da `main`'e geçildi, betik yok oldu, görev beş saat 127 verdi.
+    · __VERI__   → depo ve günlükler. Geliştirme ağacının `veri/` dizini;
+      gitignore'da olduğu için dal değişiminden zaten etkilenmiyor ve verinin
+      tek bir yerde kalması için bilinçli olarak worktree'ye taşınmıyor.
+    · __ENV__    → sırlar. Geliştirme ağacının `.env`'i; kopyalamak sırrı
+      çoğaltmak olurdu.
 -->
 <plist version="1.0">
 <dict>
@@ -34,20 +44,26 @@
     <true/>
 
     <key>WorkingDirectory</key>
-    <string>__PROJE__</string>
+    <string>__CALISMA__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>YT_OTOMASYON_KOK</key>
-        <string>__PROJE__</string>
+        <string>__CALISMA__</string>
+        <key>YT_OTOMASYON_VERI</key>
+        <string>__VERI__</string>
+        <key>YT_OTOMASYON_ENV</key>
+        <string>__ENV__</string>
     </dict>
 
     <!-- Betiğin kendi günlüğü var; bunlar `launchd` seviyesindeki hatalar
-         (betik hiç başlayamadıysa) için. -->
+         (betik hiç başlayamadıysa) için. 127 olayında yakalayan tek şey
+         buydu — ama kimse okumadığı için beş saat sonra fark edildi.
+         Betik artık ayrıca macOS bildirimi gönderiyor. -->
     <key>StandardOutPath</key>
-    <string>__PROJE__/veri/gunluk/launchd.log</string>
+    <string>__VERI__/gunluk/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>__PROJE__/veri/gunluk/launchd.hata.log</string>
+    <string>__VERI__/gunluk/launchd.hata.log</string>
 
     <!-- Düşük öncelik: arka plan işi, kullanıcının yaptığı işi yavaşlatmasın. -->
     <key>Nice</key>
