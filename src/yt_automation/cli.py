@@ -28,6 +28,7 @@ from .trend import (
     hiz,
     kaynak,
     konu_toplayici,
+    nis,
     siniflandirici,
     toplayici,
     wikipedia,
@@ -233,6 +234,73 @@ def _bosluk_rapor(*, limit: int) -> int:
     return 0
 
 
+def _nis_izle(*, kuru: bool) -> int:
+    """Niş kanalların son yüklemelerini çeker. Kanal başına 2 birim."""
+    yol = depo.varsayilan_yol()
+    sayac = kota.KaliciSayac(yol, surec=nis.SUREC)
+    kayitli = nis.kayitli_handleler(yol)
+    cozulecek = [h for h, _ in nis.IZLENEN_KANALLAR if h not in kayitli]
+
+    if kuru:
+        izlenecek = len(kayitli) + len(cozulecek)
+        print("KURU KOŞUM — niş kanal izleme")
+        print(f"  katalogda {len(nis.IZLENEN_KANALLAR)} kanal · {len(kayitli)} tanesi çözülmüş")
+        print(
+            f"  çözülecek: {len(cozulecek)} handle × {kota.MALIYET['channels.list']} birim "
+            f"= {len(cozulecek)} birim (bir kereye mahsus)"
+        )
+        print(f"  izlenecek: {izlenecek} kanal × 2 birim = {izlenecek * 2} birim")
+        print(f"  tahmini toplam: {len(cozulecek) + izlenecek * 2} birim")
+        print(f"  niş bugün: {sayac.surec_harcamasi}/{nis.NIS_KOTA_TAVANI} birim")
+        print(f"  ortak kota: {sayac.ozet()}")
+        return 0
+
+    try:
+        istemci = _istemci_kur()
+    except RuntimeError as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    if cozulecek:
+        cozum = nis.kanallari_coz(istemci, sayac, yol)
+        print(cozum.ozet())
+        for eksik in cozum.bulunamayan:
+            print(f"  ⚠️ handle bulunamadı: {eksik}", file=sys.stderr)
+
+    sonuc = nis.izle(istemci, sayac, yol)
+    print(sonuc.ozet())
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    return 1 if sonuc.kanal_sayisi == 0 else 0
+
+
+def _nis_rapor(*, erken: bool, limit: int, asgari: float, pencere: float) -> int:
+    kayitlar = nis.asiri_performans(
+        depo.varsayilan_yol(),
+        erken=erken,
+        asgari_oran=asgari,
+        pencere_gun=pencere,
+        limit=limit,
+    )
+    if not kayitlar:
+        print(
+            "Sıralanacak video yok. Sebep ya ölçüm yok (`ytoto nis izle`) ya da "
+            f"hiçbir kanalda taban için gereken {nis.ASGARI_OLGUN_VIDEO} olgun video yok."
+        )
+        return 1
+    olcut = "günlük hız oranı (erken sinyal)" if erken else "izlenme oranı (olgun videolar)"
+    kapsam = f"son {pencere:g} gün" if pencere else "tüm zamanlar"
+    print(f"{len(kayitlar)} video · {kapsam} · ölçüt: {olcut} · taban = kanalın olgun medyanı\n")
+    for kayit in kayitlar:
+        print(f"  {kayit.satir(erken=erken)}")
+    print(
+        "\nℹ️ Bu sinyal takipçi yapar, lider değil: burada zirveye çıkan konu "
+        "tanımı gereği arzı VAR olan konudur. `ytoto bosluk rapor` ile birlikte okunmalı.",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _konu_topla(*, diller: str, gun: str | None, adet: int) -> int:
     """Wikipedia okunma sıçramaları — kota harcamaz, anahtar istemez."""
     yol = depo.varsayilan_yol()
@@ -377,6 +445,30 @@ def main(argv: list[str] | None = None) -> int:
     br = bosluk_altlar.add_parser("rapor", help="Ölçülmüş adayları skora göre sırala (ücretsiz)")
     br.add_argument("--limit", type=int, default=25)
 
+    nis_ay = altlar.add_parser("nis", help="Niş kanal izleme — kendi ortalamasına göre performans")
+    nis_altlar = nis_ay.add_subparsers(dest="nis_komutu", required=True)
+
+    ni = nis_altlar.add_parser(
+        "izle", help="Kanalların son yüklemelerini çek (kanal başına 2 birim)"
+    )
+    ni.add_argument("--kuru", action="store_true", help="Hiç çağrı yapma, maliyeti bildir")
+
+    nr = nis_altlar.add_parser("rapor", help="Aşırı performans oranına göre sırala (ücretsiz)")
+    nr.add_argument(
+        "--erken",
+        action="store_true",
+        help="Olgunlaşmamış videoları da kat (gürültülü, her biri işaretlenir)",
+    )
+    nr.add_argument("--limit", type=int, default=25)
+    nr.add_argument("--asgari", type=float, default=1.0, help="Bu oranın altını gösterme")
+    nr.add_argument(
+        "--pencere",
+        type=float,
+        default=nis.PENCERE_GUN,
+        help=f"Kaç günden yeni videolar sıralansın "
+        f"(0 = tüm zamanlar, varsayılan: {nis.PENCERE_GUN})",
+    )
+
     konu_ay = altlar.add_parser("konu", help="Wikipedia okunma sıçramaları (kota harcamaz)")
     konu_altlar = konu_ay.add_subparsers(dest="konu_komutu", required=True)
 
@@ -422,6 +514,13 @@ def main(argv: list[str] | None = None) -> int:
             return _bosluk_arastir(limit=args.limit, kuru=args.kuru)
         if args.bosluk_komutu == "rapor":
             return _bosluk_rapor(limit=args.limit)
+    if args.komut == "nis":
+        if args.nis_komutu == "izle":
+            return _nis_izle(kuru=args.kuru)
+        if args.nis_komutu == "rapor":
+            return _nis_rapor(
+                erken=args.erken, limit=args.limit, asgari=args.asgari, pencere=args.pencere
+            )
     if args.komut == "konu":
         if args.konu_komutu == "topla":
             return _konu_topla(diller=args.diller, gun=args.gun, adet=args.adet)
