@@ -193,6 +193,23 @@ def ozellikler(sinyal: hiz.Sinyal, *, bolge: str | None, gun: str) -> dict:
     }
 
 
+# ⚠️ **Notion `rich_text.content` markdown YORUMLAMIYOR.** İçerik literal
+# alınıyor, yani `**kalın**` ekranda yıldızlarıyla birlikte görünüyor. İlk
+# canlı aktarımda tam bu oldu:
+#
+#     \*\*Great Zimbabwe\*\* · en.wikipedia · \[tarih\]
+#     Kaynak: \`ytoto trend aktar\`
+#
+# Vurgu `annotations` alanıyla veriliyor, işaretle değil. Bu yüzden gövde
+# metinlerinde markdown sözdizimi kullanılmıyor.
+def _blok(metin: str, *, tur: str = "paragraph", **bicim) -> dict:
+    """Tek bir Notion bloğu. `bicim`: bold, code, italic…"""
+    parca: dict = {"text": {"content": metin[:BASLIK_SINIRI]}}
+    if bicim:
+        parca["annotations"] = bicim
+    return {"object": "block", "type": tur, tur: {"rich_text": [parca]}}
+
+
 def govde_metni(sinyal: hiz.Sinyal) -> list[dict]:
     """Sayfa gövdesi — kabul ölçütü "Ömer içerik üretimine başlayabilecek kadar
     bağlam buluyor" burada karşılanıyor.
@@ -201,7 +218,7 @@ def govde_metni(sinyal: hiz.Sinyal) -> list[dict]:
     hangi uyarılarla okunması gerektiğini taşıyor. Ömer'in bu dosyaları
     okumadan çalışması gerekiyor.
     """
-    satirlar = [f"**{sinyal.baslik}**", ""]
+    satirlar = []
     if sinyal.kanal_adi:
         satirlar.append(f"Kanal: {sinyal.kanal_adi}")
     satirlar.append(f"İzlenme: {sinyal.izlenme:,}")
@@ -220,22 +237,15 @@ def govde_metni(sinyal: hiz.Sinyal) -> list[dict]:
         satirlar.append(f"En iyi sıra: #{sinyal.en_iyi_sira} · {sinyal.bolge_sayisi} bölgede")
     if sinyal.yeni_giren:
         satirlar.append("🆕 Listeye bu taramada yeni girdi.")
-    satirlar += [
-        "",
-        "⚠️ Bu bir **talep** sinyali, arz sinyali değil: burada trend olan konuyu "
+    satirlar.append(
+        "⚠️ Bu bir TALEP sinyali, arz sinyali değil: burada trend olan konuyu "
         "büyük kanallar zaten yapmış olabilir. Üretime almadan önce "
-        "`ytoto bosluk rapor` çıktısına bakın.",
-        "",
-        f"Kaynak: `ytoto trend aktar` · video kimliği `{sinyal.video_id}`",
-    ]
+        "ytoto bosluk rapor çıktısına bakın."
+    )
     return [
-        {
-            "object": "block",
-            "type": "paragraph",
-            "paragraph": {"rich_text": [{"text": {"content": satir}}]},
-        }
-        for satir in satirlar
-        if satir
+        _blok(sinyal.baslik, tur="heading_3"),
+        *[_blok(s) for s in satirlar if s],
+        _blok(f"ytoto trend aktar · video kimliği {sinyal.video_id}", code=True),
     ]
 
 
@@ -317,16 +327,13 @@ def bosluk_govdesi(kayit: bosluk.Bosluk, dosya: dict | None) -> list[dict]:
     baslik = kayit.baslik.replace("_", " ")
     skor = "hesaplanamadı" if kayit.skor is None else f"{kayit.skor:+.2f}"
     satirlar = [
-        f"**{baslik}** · {kayit.dil}.wikipedia · [{kayit.sinif}]",
-        "",
+        f"{kayit.dil}.wikipedia · [{kayit.sinif}]",
         f"TALEP — {kayit.talep:,} günlük okunma",
         f"ARZ — {kayit.olcum.ozet()}",
         f"BOŞLUK SKORU — {skor}",
-        "",
-        "⚠️ Skor bir **sıralamadır, eşik değildir**: Wikipedia okunması ile YouTube "
+        "⚠️ Skor bir SIRALAMADIR, eşik değildir: Wikipedia okunması ile YouTube "
         "izlenmesi farklı ölçeklerde olduğu için işaret kalibre edilmedi. Adayları "
         "birbirine göre karşılaştırın, sıfırı sınır saymayın.",
-        "",
     ]
 
     if dosya_dolu(dosya):
@@ -342,19 +349,14 @@ def bosluk_govdesi(kayit: bosluk.Bosluk, dosya: dict | None) -> list[dict]:
             satirlar.append(f"  🖼 {gorsel['deger']} — {gorsel['lisans']} (atıf: {gorsel['atif']})")
     else:
         satirlar.append(
-            "KAYNAK DOSYASI — **yok.** `ytoto konu kaynak` çalıştırılmadan bu konu "
+            "KAYNAK DOSYASI — YOK. `ytoto konu kaynak` çalıştırılmadan bu konu "
             "videoya dönüşmemeli: iddiaların dayanağı ve görsellerin lisansı eksik."
         )
 
-    satirlar += ["", f"Kaynak: `ytoto trend aktar --kaynak wikipedia` · Wikidata `{kayit.qid}`"]
     return [
-        {
-            "object": "block",
-            "type": "paragraph",
-            "paragraph": {"rich_text": [{"text": {"content": satir[:BASLIK_SINIRI]}}]},
-        }
-        for satir in satirlar
-        if satir
+        _blok(baslik, tur="heading_3"),
+        *[_blok(s) for s in satirlar if s],
+        _blok(f"ytoto trend aktar --kaynak wikipedia · Wikidata {kayit.qid}", code=True),
     ]
 
 

@@ -318,16 +318,31 @@ def _yaz(baglanti, qid: str, tur: str, deger: str, simdi: str, **ek) -> None:
     )
 
 
-def cek(yol: Path, dil: str, baslik: str, qid: str) -> KaynakSonucu:
-    """Bir adayın kaynak dosyasını çeker ve depoya yazar."""
+def cek(yol: Path, dil: str, baslik: str, qid: str, *, yenile: bool = False) -> KaynakSonucu:
+    """Bir adayın kaynak dosyasını çeker ve depoya yazar.
+
+    `yenile=True` yazmadan **önce** o konunun eski satırlarını siliyor. Bu
+    şart: birincil anahtar `(qid, tur, deger)` ve tazelemede değer değişiyor
+    (`Q954` → `Zimbabve`). Silmeden yazmak eskisini bırakıp yenisini ekler,
+    yani dosya temizlenmek yerine ikiye katlanır.
+    """
     sonuc = KaynakSonucu(qid=qid)
     simdi = datetime.now(UTC).isoformat()
 
+    # Ağ çağrıları işlemin DIŞINDA: yazma kilidini bir HTTP turu boyunca
+    # tutmak, kota sayacını bekleten uzun kilitler üretir.
     referanslar = referanslari_getir(dil, baslik)
     olgular = olgulari_getir(qid)
     gorseller = gorselleri_getir(dil, baslik)
 
+    if yenile and not (referanslar or olgular or gorseller):
+        # Çekim tamamen boş döndüyse silme: elde olanı, hiç yoktan iyi.
+        # Geçici bir ağ hatası yüzünden iyi bir dosyayı silmek geri alınamaz.
+        return sonuc
+
     with depo.yazma_islemi(yol) as baglanti:
+        if yenile:
+            baglanti.execute("DELETE FROM kaynak WHERE qid = ?", (qid,))
         for adres in referanslar:
             _yaz(baglanti, qid, "referans", adres, simdi)
             sonuc.referans += 1
@@ -340,23 +355,32 @@ def cek(yol: Path, dil: str, baslik: str, qid: str) -> KaynakSonucu:
     return sonuc
 
 
-def cekilmemis_adaylar(yol: Path, limit: int = 20) -> list[dict]:
+def cekilmemis_adaylar(yol: Path, limit: int = 20, *, yenile: bool = False) -> list[dict]:
     """Kaynağı henüz çekilmemiş adaylar — en çok okunanlar önce.
 
     Yalnızca `tarih`/`bilim` sınıfı: 544 `diger` için kaynak çekmek anlamsız.
+
+    `yenile=True` zaten çekilmiş olanları da döndürür. Atlama kuralı doğru bir
+    tasarruf ama **tek yönlüydü**: bir kez yanlış çekilen dosya sonsuza kadar
+    yanlış kalıyordu.
+
+    ⚠️ Bu, varsayımsal bir risk değil. `etiketleri_coz()` DW-37'nin ortasında
+    eklendi ve ondan önce yazılan satırlar depoda ham kimlikle kaldı — 59
+    olgunun 41'i `ülkesi: Q954` gibi. Toplayıcı düzeldi, veri düzelmedi.
     """
+    kosul = "" if yenile else "AND NOT EXISTS (SELECT 1 FROM kaynak k WHERE k.qid = m.qid)"
     baglanti = depo.baglan(yol)
     try:
         return [
             dict(s)
             for s in baglanti.execute(
-                """
+                f"""
                 SELECT m.dil, m.baslik, m.qid, MAX(o.okunma) AS okunma
                 FROM makale m
                 JOIN okunma o ON o.dil = m.dil AND o.baslik = m.baslik
                 WHERE m.sinif IN ('tarih', 'bilim')
                   AND m.qid IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM kaynak k WHERE k.qid = m.qid)
+                  {kosul}
                 GROUP BY m.dil, m.baslik
                 ORDER BY okunma DESC
                 LIMIT ?

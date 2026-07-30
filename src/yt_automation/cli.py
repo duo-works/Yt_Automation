@@ -462,17 +462,17 @@ def _konu_siniflandir(*, limit: int, kuru: bool) -> int:
     return 1 if sonuc.cagri_sayisi == 0 else 0
 
 
-def _konu_kaynak(*, limit: int, json_cikti: bool) -> int:
+def _konu_kaynak(*, limit: int, json_cikti: bool, yenile: bool) -> int:
     """Adayların kaynak dosyalarını çeker. Ücretsiz — YouTube kotası harcamaz."""
     yol = depo.varsayilan_yol()
-    adaylar = kaynak.cekilmemis_adaylar(yol, limit)
+    adaylar = kaynak.cekilmemis_adaylar(yol, limit, yenile=yenile)
     if not adaylar:
         print("Kaynağı çekilmemiş aday yok — önce `ytoto konu topla` çalıştırın.")
         return 1
 
     yetersiz = 0
     for aday in adaylar:
-        sonuc = kaynak.cek(yol, aday["dil"], aday["baslik"], aday["qid"])
+        sonuc = kaynak.cek(yol, aday["dil"], aday["baslik"], aday["qid"], yenile=yenile)
         baslik = aday["baslik"].replace("_", " ")
         print(f"  {baslik} — {sonuc.ozet()}")
         if not sonuc.yeterli:
@@ -634,6 +634,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     kk.add_argument("--limit", type=int, default=10, help="Kaç aday işlensin")
     kk.add_argument("--json", action="store_true", help="Kaynak dosyasını JSON olarak bas")
+    kk.add_argument(
+        "--yenile",
+        action="store_true",
+        help="Zaten çekilmiş dosyaları da yeniden çek (toplayıcı düzeldiğinde gerekir)",
+    )
 
     ks = konu_altlar.add_parser(
         "siniflandir", help="Belirsiz kalan makaleleri LLM'e sor (YouTube kotası harcamaz)"
@@ -682,7 +687,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.konu_komutu == "siniflandir":
             return _konu_siniflandir(limit=args.limit, kuru=args.kuru)
         if args.konu_komutu == "kaynak":
-            return _konu_kaynak(limit=args.limit, json_cikti=args.json)
+            return _konu_kaynak(limit=args.limit, json_cikti=args.json, yenile=args.yenile)
     return 1
 
 

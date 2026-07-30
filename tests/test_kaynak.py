@@ -401,3 +401,64 @@ def test_surum_2_veritabani_kaynak_tablosunu_alir(yol: Path):
     finally:
         baglanti.close()
     assert "kaynak" in adlar
+
+
+# --- Tazeleme (DW-46) ----------------------------------------------------
+
+
+def test_yenile_eski_satirlari_siler(yol: Path, monkeypatch):
+    """PK `(qid, tur, deger)`; tazelemede DEĞER değişiyor (`Q954` → `Zimbabve`).
+
+    Silmeden yazmak eskisini bırakıp yenisini ekler — dosya temizlenmek yerine
+    ikiye katlanır. Canlı depoda 59 olgunun 41'i ham kimlikle kalmıştı.
+    """
+    with depo.yazma_islemi(yol) as baglanti:
+        baglanti.execute(
+            "INSERT INTO kaynak (qid, tur, deger, etiket, cekilme) "
+            "VALUES ('Q1', 'olgu', 'Q954', 'ülkesi', '2026-07-29T00:00:00+00:00')"
+        )
+
+    monkeypatch.setattr(kaynak, "referanslari_getir", lambda d, b, adet=12: [])
+    monkeypatch.setattr(kaynak, "olgulari_getir", lambda q: [("ülkesi", "Zimbabve")])
+    monkeypatch.setattr(kaynak, "gorselleri_getir", lambda d, b, adet=4: [])
+
+    kaynak.cek(yol, "en", "Great_Zimbabwe", "Q1", yenile=True)
+    olgular = kaynak.dosyayi_oku(yol, "Q1")["olgu"]
+
+    assert [o["deger"] for o in olgular] == ["Zimbabve"], "ham kimlik kalmamalı"
+
+
+def test_yenile_bos_cekimde_silmez(yol: Path, monkeypatch):
+    """Geçici bir ağ hatası yüzünden iyi bir dosyayı silmek geri alınamaz."""
+    with depo.yazma_islemi(yol) as baglanti:
+        baglanti.execute(
+            "INSERT INTO kaynak (qid, tur, deger, etiket, cekilme) "
+            "VALUES ('Q1', 'olgu', 'Zimbabve', 'ülkesi', '2026-07-30T00:00:00+00:00')"
+        )
+
+    monkeypatch.setattr(kaynak, "referanslari_getir", lambda d, b, adet=12: [])
+    monkeypatch.setattr(kaynak, "olgulari_getir", lambda q: [])
+    monkeypatch.setattr(kaynak, "gorselleri_getir", lambda d, b, adet=4: [])
+
+    kaynak.cek(yol, "en", "X", "Q1", yenile=True)
+    assert len(kaynak.dosyayi_oku(yol, "Q1")["olgu"]) == 1, "boş çekim silmemeli"
+
+
+def test_yenile_olmadan_cekilmis_aday_atlanir(yol: Path):
+    """Varsayılan davranış korunmalı — her tekrar ücretsiz ama boşuna trafik."""
+    with depo.yazma_islemi(yol) as baglanti:
+        baglanti.execute(
+            "INSERT INTO makale (dil, baslik, qid, sinif, sinif_kaynagi, ilk_gorulme) "
+            "VALUES ('en', 'Cleopatra', 'Q1', 'tarih', 'wikidata', '2026-07-30T00:00:00+00:00')"
+        )
+        baglanti.execute(
+            "INSERT INTO okunma (dil, baslik, gun, okunma) "
+            "VALUES ('en', 'Cleopatra', '2026-07-29', 25000)"
+        )
+        baglanti.execute(
+            "INSERT INTO kaynak (qid, tur, deger, cekilme) "
+            "VALUES ('Q1', 'olgu', 'x', '2026-07-30T00:00:00+00:00')"
+        )
+
+    assert kaynak.cekilmemis_adaylar(yol) == []
+    assert [a["baslik"] for a in kaynak.cekilmemis_adaylar(yol, yenile=True)] == ["Cleopatra"]
