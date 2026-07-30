@@ -29,7 +29,8 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 # 3 → kaynak dosyası: referans, olgu, görsel (DW-37)
 # 4 → arz sondajı: talep-arz boşluğu ölçümü (DW-35)
 # 5 → niş kanal izleme: kanal kataloğu + kanal bazlı ölçüm (DW-36)
-SEMA_SURUMU = 5
+# 6 → Notion aktarım defteri (DW-31)
+SEMA_SURUMU = 6
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -198,6 +199,22 @@ CREATE TABLE IF NOT EXISTS nis_olcum (
 );
 
 CREATE INDEX IF NOT EXISTS nis_olcum_kanal ON nis_olcum(kanal_id);
+
+-- Aktarım defteri: hangi video hangi hedefe gönderildi.
+--
+-- "Bu daha önce aktarıldı mı?" sorusunun ucuz cevabı burada. Notion'a sormak
+-- her koşuda bir okuma çağrısı demek olurdu ve okuma tarafı ücretsiz planda
+-- saatlik kotalı — kaçındığımız şey tam olarak o.
+--
+-- `hedef` sütunu şimdilik yalnızca 'notion' değerini alıyor; ikinci bir hedef
+-- (örneğin bir web panosu) eklendiğinde şema değişmesin diye anahtarda.
+CREATE TABLE IF NOT EXISTS aktarim (
+    video_id  TEXT NOT NULL,
+    hedef     TEXT NOT NULL,
+    sayfa_url TEXT,
+    an        TEXT NOT NULL,
+    PRIMARY KEY (video_id, hedef)
+);
 """
 
 
