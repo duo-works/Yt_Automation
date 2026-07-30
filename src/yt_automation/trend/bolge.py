@@ -8,6 +8,7 @@ tarafına ayrılan payı — hepsi bu dosyada.
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .. import depo
@@ -44,6 +45,33 @@ ILGILI_KATEGORILER: tuple[int, ...] = (27, 28)
 
 DERIN_BOLGE_SAYISI = 20
 
+# Bölge sıralamasının bakacağı geçmiş penceresi (gün).
+#
+# Tek bir geniş taramaya bakmak kırılgan: o koşumda bir bölge hata verdiyse
+# (ilk canlı taramada 111 bölgenin hepsi 404 aldı) sıralamadan tamamen düşer.
+# Bir hafta, haftalık yeniden seçim ritmine denk geliyor ve tek koşumun
+# gürültüsünü yumuşatıyor.
+SECIM_PENCERESI_GUN = 7
+
+# İki bölgenin "aynı çartı döndürüyor" sayılması için örtüşme oranı.
+#
+# ⚠️ Bu eşik ölçülerek konuldu. 2026-07-30 geniş taramasında:
+#
+#     LI ∩ CH   %100   ← Liechtenstein, İsviçre çartının birebir kopyası
+#     US ∩ GB    %62
+#     AT ∩ DE    %48
+#     CH ∩ AT    %42
+#     SG ∩ MY    %28
+#     TR ∩ DE     %7
+#
+# Liechtenstein 40 bin nüfuslu ve YouTube ona ayrı bir çart üretmiyor. Onu
+# ayrı bölge saymak derin taramanın 20 yuvasından birini hiç yeni veri
+# getirmeyen bir çağrıya harcamak olur.
+#
+# %90: yalnızca fiilen aynı olanı eliyor. %62'de duran US/GB gerçekten farklı
+# — ortak dil örtüşme üretiyor ama %38'i ayrı ve o kısım bilgi taşıyor.
+ORTUSME_ESIGI = 0.90
+
 # Yalnızca `--kuru` maliyet tahmini için. Gerçek sayı her koşuda
 # `i18nRegions.list`'ten geliyor; burası bir çağrı yapmadan büyüklük sırası
 # verebilmek için duruyor. Google bölge eklerse tahmin biraz şaşar, koşu şaşmaz.
@@ -76,14 +104,91 @@ def son_genis_kosu(baglanti: sqlite3.Connection) -> str | None:
     return satir["an"] if satir else None
 
 
-def derin_bolgeler(yol: Path, adet: int = DERIN_BOLGE_SAYISI) -> list[str]:
+def _ilgi_siralamasi(baglanti: sqlite3.Connection, sinir: str) -> list[tuple[str, int]]:
+    """Bölgeleri ilgili içerik yoğunluğuna göre sıralar.
+
+    Ölçüt **kategori**, sınıf değil ve bu ölçülmüş bir seçim. DW-31'de
+    `video.sinif` doldurulduktan sonra ikisini karşılaştırdım:
+
+        sinif IN ('tarih','bilim')  →  en yüksek bölge  6 video
+        kategori_id IN (27, 28)     →  en yüksek bölge 93 video
+
+    Sınıf sinyali 20 bölgeyi sıralamak için fazla seyrek: altıncı bölgeden
+    sonra hepsi 3'e düşüyor ve sıralama alfabetik kura dönüyor. Kategori zayıf
+    ama **yoğun** bir sinyal ve burada aranan şey mutlak doğruluk değil, hangi
+    ülkeye ikinci bir çağrı yapmaya değer olduğu.
+    """
+    yer = ",".join("?" * len(ILGILI_KATEGORILER))
+    return [
+        (s["bolge"], s["adet"])
+        for s in baglanti.execute(
+            f"""
+            SELECT o.bolge AS bolge, COUNT(DISTINCT o.video_id) AS adet
+            FROM olcum o
+            JOIN video v ON v.video_id = o.video_id
+            JOIN kosu k ON k.an = o.an AND k.tur = 'genis'
+            WHERE o.an >= ?
+              AND v.kategori_id IN ({yer})
+            GROUP BY o.bolge
+            ORDER BY adet DESC, o.bolge ASC
+            """,
+            (sinir, *ILGILI_KATEGORILER),
+        ).fetchall()
+    ]
+
+
+def _ortusme_haritasi(baglanti: sqlite3.Connection, an: str) -> dict[str, frozenset[str]]:
+    """Bir koşudaki her bölgenin video kümesi."""
+    kumeler: dict[str, set[str]] = {}
+    for s in baglanti.execute("SELECT bolge, video_id FROM olcum WHERE an = ?", (an,)).fetchall():
+        kumeler.setdefault(s["bolge"], set()).add(s["video_id"])
+    return {b: frozenset(v) for b, v in kumeler.items()}
+
+
+def kopya_bolgeler(
+    kumeler: dict[str, frozenset[str]], sirali: list[str], esik: float = ORTUSME_ESIGI
+) -> dict[str, str]:
+    """`kopya → temsilci` eşlemesi.
+
+    Sıralamada **önde** olan bölge temsilci olur; arkadakiler onun kopyası
+    sayılır. Böylece LI/CH çiftinde hangisinin kaldığı sıralamaya göre
+    belirlenir, alfabeye göre değil.
+    """
+    kopyalar: dict[str, str] = {}
+    temsilciler: list[str] = []
+    for bolge in sirali:
+        kume = kumeler.get(bolge)
+        if not kume:
+            continue
+        for temsilci in temsilciler:
+            digeri = kumeler[temsilci]
+            ortak = len(kume & digeri)
+            if ortak / min(len(kume), len(digeri)) >= esik:
+                kopyalar[bolge] = temsilci
+                break
+        else:
+            temsilciler.append(bolge)
+    return kopyalar
+
+
+def derin_bolgeler(
+    yol: Path, adet: int = DERIN_BOLGE_SAYISI, *, pencere_gun: int = SECIM_PENCERESI_GUN
+) -> list[str]:
     """Derin taramanın kapsayacağı bölgeler — **ölçülerek**, varsayılmadan.
 
-    Sıralama, son geniş taramada eğitim/bilim kategorisindeki videoların
-    yoğunluğuna göre yapılır. Sabit bir "en büyük 20 pazar" listesi yazmak,
-    *"hangi ülkede"* sorusunu ilk günden varsaymak olurdu — oysa izlenme
-    hacmi ile tarih/bilim yoğunluğu aynı sırayı vermek zorunda değil.
+    Sabit bir "en büyük 20 pazar" listesi yazmak, *"hangi ülkede"* sorusunu
+    ilk günden varsaymak olurdu — oysa izlenme hacmi ile tarih/bilim yoğunluğu
+    aynı sırayı vermek zorunda değil.
+
+    İki iyileştirme DW-32'de geldi:
+
+    1. **Pencere.** Tek bir koşuya değil son `pencere_gun` gündeki geniş
+       taramalara bakılıyor. Tek koşuma bakmak kırılgan: o koşumda hata almış
+       bir bölge sıralamadan tamamen düşerdi.
+    2. **Kopya eleme.** Aynı çartı döndüren bölgeler tek bir yuva harcıyor;
+       gerekçe `ORTUSME_ESIGI`'nde ölçümle birlikte duruyor.
     """
+    sinir = (datetime.now(UTC) - timedelta(days=pencere_gun)).isoformat()
     baglanti = depo.baglan(yol)
     try:
         an = son_genis_kosu(baglanti)
@@ -92,25 +197,49 @@ def derin_bolgeler(yol: Path, adet: int = DERIN_BOLGE_SAYISI) -> list[str]:
                 "derin tarama için önce en az bir geniş tarama gerekiyor — "
                 "`ytoto trend topla --genis` çalıştırın"
             )
-        satirlar = baglanti.execute(
-            f"""
-            SELECT o.bolge AS bolge, COUNT(*) AS adet
-            FROM olcum o
-            JOIN video v ON v.video_id = o.video_id
-            WHERE o.an = ?
-              AND v.kategori_id IN ({",".join("?" * len(ILGILI_KATEGORILER))})
-            GROUP BY o.bolge
-            ORDER BY adet DESC, o.bolge ASC
-            LIMIT ?
-            """,
-            (an, *ILGILI_KATEGORILER, adet),
-        ).fetchall()
+        sirali = _ilgi_siralamasi(baglanti, sinir)
+        if not sirali:
+            raise BolgeHatasi(
+                f"son {pencere_gun} günde hiç eğitim/bilim videosu bulunamadı "
+                f"(en son geniş tarama: {an}) — taramanın veri getirdiğini doğrulayın"
+            )
+        kumeler = _ortusme_haritasi(baglanti, an)
     finally:
         baglanti.close()
 
-    if not satirlar:
-        raise BolgeHatasi(
-            f"son geniş taramada ({an}) hiç eğitim/bilim videosu bulunamadı — "
-            "taramanın gerçekten veri getirdiğini doğrulayın"
-        )
-    return [s["bolge"] for s in satirlar]
+    adlar = [b for b, _ in sirali]
+    kopyalar = kopya_bolgeler(kumeler, adlar)
+    return [b for b in adlar if b not in kopyalar][:adet]
+
+
+def secim_raporu(
+    yol: Path, adet: int = DERIN_BOLGE_SAYISI, *, pencere_gun: int = SECIM_PENCERESI_GUN
+) -> list[dict]:
+    """Sıralamanın **neden** böyle olduğunu gösteren teşhis çıktısı.
+
+    Bölge seçimi otomatik ama denetlenebilir olmalı: "neden TR listede yok"
+    sorusunun cevabı koda bakmadan görülebilmeli.
+    """
+    sinir = (datetime.now(UTC) - timedelta(days=pencere_gun)).isoformat()
+    baglanti = depo.baglan(yol)
+    try:
+        an = son_genis_kosu(baglanti)
+        sirali = _ilgi_siralamasi(baglanti, sinir)
+        kumeler = _ortusme_haritasi(baglanti, an) if an else {}
+    finally:
+        baglanti.close()
+
+    kopyalar = kopya_bolgeler(kumeler, [b for b, _ in sirali])
+    rapor: list[dict] = []
+    secilen = 0
+    for bolge, sayi in sirali:
+        kopya = kopyalar.get(bolge)
+        if kopya is None and secilen < adet:
+            secilen += 1
+            durum = "seçildi"
+        elif kopya is not None:
+            durum = f"kopya → {kopya}"
+        else:
+            durum = "sıra dışı"
+        rapor.append({"bolge": bolge, "adet": sayi, "durum": durum})
+    return rapor
