@@ -1,8 +1,17 @@
 name: CI
 
 on:
+  # ⚠️ `pull_request`'te **dal filtresi yok** ve bu bilinçli. Bu repo'da
+  # yığmak yerleşik desen (PR #7 → #6 → main). `branches: [main]` filtresiyle
+  # yığılmış PR'da test, ruff ve stack tespiti hiç koşmuyordu — görünen tek
+  # yeşil tik `pr-title-ok` oluyordu ve review'a yanlış güven veriyordu.
+  #
+  # `main`'e giren kod açısından delik değildi (yığının tepesi `main`'i
+  # hedefliyor), ama hata yığının dibindeyse üstündeki her PR onu miras alır
+  # ve kimse fark etmez. DW-24'ün WAL yarışı tam böyle üç PR taşındı.
+  #
+  # Bedeli: her yığılmış PR ayrıca CI koşar. İki kişilik ekipte önemsiz.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
