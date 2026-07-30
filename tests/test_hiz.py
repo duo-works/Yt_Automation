@@ -303,6 +303,45 @@ def test_yeni_giren_isaretlenir(yol: Path, yaz):
     assert sinyaller["eski"].yeni_giren is False
 
 
+def test_kapsami_daralan_tarama_yeni_giren_uretmez(yol: Path, yaz):
+    """İlk canlı koşumda bulundu: 3.677 videonun 3.190'ı "yeni giren" çıktı.
+
+    Sebep, geniş tarama 111 bölgeyi kapsarken sonraki derin taramaların 8
+    bölgeyi kapsaması. Karşılaştırma videonun **kendi** son ölçümüyle
+    yapılırsa, derin taramanın hiç görmediği videolar için
+    `ilk_gorulme == kendi_son_olcumu` sonsuza kadar doğru kalıyor ve sinyal
+    kullanılamaz hale geliyor.
+
+    Doğru karşılaştırma kümenin en son koşusuyla.
+    """
+    # t=0: geniş tarama, iki bölge. t=5: derin tarama, yalnızca TR.
+    yaz("terk_edilen", [(0, 10_000, 1, "DE")], ilk_gorulme_saat=0)
+    yaz("izlenen", [(0, 10_000, 1, "TR"), (5, 12_000, 1, "TR")], ilk_gorulme_saat=0)
+    yaz("gercekten_yeni", [(5, 3_000, 1, "TR")], ilk_gorulme_saat=5)
+
+    sinyaller = {s.video_id: s for s in hiz.hesapla(yol, sirala="izlenme")}
+
+    assert sinyaller["gercekten_yeni"].yeni_giren is True
+    assert sinyaller["terk_edilen"].yeni_giren is False, (
+        "son taramanın kapsamadığı video sonsuza kadar 'yeni' kalmamalı"
+    )
+    assert sinyaller["izlenen"].yeni_giren is False
+
+
+def test_bolge_filtresinde_en_son_kosu_o_bolgeye_gore(yol: Path, yaz):
+    """`--bolge DE` verildiğinde "en son koşu" DE'yi kapsayan en son koşu olmalı.
+
+    Küresel en son koşuya bakılsa DE'de yeni beliren bir video, TR'de daha
+    sonra koşu yapıldığı için "yeni" sayılmazdı.
+    """
+    yaz("de_yeni", [(5, 4_000, 1, "DE")], ilk_gorulme_saat=5)
+    yaz("tr_sonraki", [(9, 7_000, 1, "TR")], ilk_gorulme_saat=9)
+
+    sadece_de = hiz.hesapla(yol, bolge_kodu="DE", sirala="izlenme")
+    assert [s.video_id for s in sadece_de] == ["de_yeni"]
+    assert sadece_de[0].yeni_giren is True
+
+
 # --- Sıralama ------------------------------------------------------------
 
 

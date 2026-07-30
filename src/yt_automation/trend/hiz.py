@@ -189,12 +189,17 @@ def turet(
     *,
     yayin_zamani: datetime | None = None,
     ilk_gorulme: datetime | None = None,
+    en_son_kosu: datetime | None = None,
     sinyal: Sinyal,
 ) -> Sinyal:
     """Bir videonun serisinden hız, ivme ve normalize değerleri doldurur.
 
     Seri `an`'a göre artan sırada olmalı. İzlenmesi `NULL` gelen ölçümler
     (gizli istatistik) çağıran tarafından ayıklanmış varsayılıyor.
+
+    `en_son_kosu` **bütün** kümedeki en son koşu damgası — videonun kendi son
+    ölçümü değil. Aradaki fark "listeye yeni girdi" sinyalinin doğruluğunu
+    belirliyor; gerekçe `yeni_giren` bloğunda.
     """
     son = seri[-1]
     sinyal.olcum_sayisi = len(seri)
@@ -229,10 +234,23 @@ def turet(
             sinyal.yasa_gore = son.izlenme / max(yas, ASGARI_YAS_SAAT)
 
     # --- Listeye giriş ----------------------------------------------------
-    # Videonun ilk görüldüğü koşu, son koşuysa: bu tarama onu ilk kez gördü.
-    # Tek başına güçlü sinyal — çarta yeni düşmek, çartta durmaktan farklı.
+    # Videonun ilk görüldüğü koşu, **en son** koşuysa: bu tarama onu ilk kez
+    # gördü. Tek başına güçlü sinyal — çarta yeni düşmek, çartta durmaktan
+    # farklı bir olay.
+    #
+    # ⚠️ Karşılaştırma videonun kendi son ölçümüyle **değil**, kümedeki en son
+    # koşuyla yapılıyor. İlk canlı koşumda ilki denendi ve 3.677 videonun
+    # 3.190'ı "yeni giren" işaretlendi — sinyal kullanılamaz hale geldi.
+    #
+    # Sebep: geniş tarama 111 bölgeyi, sonraki derin taramalar 8 bölgeyi
+    # kapsıyor. Derin taramanın görmediği 103 bölgenin videoları için
+    # `ilk_gorulme == kendi_son_olcumu` sonsuza kadar doğru kalıyor, çünkü o
+    # videolar bir daha hiç ölçülmüyor.
+    #
+    # Kümenin en son koşusuyla karşılaştırmak bunu kapatıyor: bir video ancak
+    # gerçekten en yeni taramada belirdiyse "yeni" sayılıyor.
     if ilk_gorulme is not None:
-        sinyal.yeni_giren = ilk_gorulme == son.an
+        sinyal.yeni_giren = ilk_gorulme == (en_son_kosu or son.an)
 
     return sinyal
 
@@ -311,6 +329,11 @@ def hesapla(
     finally:
         baglanti.close()
 
+    # Kümedeki en son koşu — "yeni giren" bunun üzerinden belirlenir. Filtre
+    # uygulanmış küme üzerinden hesaplanıyor: `--bolge TR` verildiğinde
+    # "en son koşu" o bölgeyi kapsayan en son koşu olmalı.
+    en_son_kosu = max(nokta.an for seri in seriler.values() for nokta in seri)
+
     sonuclar: list[Sinyal] = []
     for video_id, seri in seriler.items():
         ust = videolar.get(video_id)
@@ -323,6 +346,7 @@ def hesapla(
                 seri,
                 yayin_zamani=_zamana_cevir(ust["yayin_zamani"]),
                 ilk_gorulme=_zamana_cevir(ust["ilk_gorulme"]),
+                en_son_kosu=en_son_kosu,
                 sinyal=Sinyal(
                     video_id=video_id,
                     baslik=ust["baslik"],
