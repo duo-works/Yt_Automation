@@ -22,7 +22,16 @@ from datetime import date
 from pathlib import Path
 
 from . import __version__, depo, kanal, kota
-from .trend import bolge, hiz, kaynak, konu_toplayici, siniflandirici, toplayici, wikipedia
+from .trend import (
+    bolge,
+    bosluk,
+    hiz,
+    kaynak,
+    konu_toplayici,
+    siniflandirici,
+    toplayici,
+    wikipedia,
+)
 from .video import MetadataHatasi, kuyrugu_oku
 
 ANAHTAR_DEGISKENI = "YOUTUBE_API_KEY"
@@ -149,6 +158,78 @@ def _trend_rapor(*, bolge_kodu: str | None, siniflar: str | None, sirala: str, l
             "\n⚠️ Hiçbir videonun ivmesi yok: ivme üç ölçüm istiyor. Üçüncü koşumdan sonra dolacak.",
             file=sys.stderr,
         )
+    return 0
+
+
+def _bosluk_arastir(*, limit: int, kuru: bool) -> int:
+    """Talep-arz sondajı — huninin tek pahalı adımı, sondaj başına 102 birim."""
+    yol = depo.varsayilan_yol()
+    adaylar = bosluk.sondajlanmamis_adaylar(yol, limit)
+    sayac = kota.KaliciSayac(yol, surec=bosluk.SUREC)
+
+    if not adaylar:
+        print("Sondajlanmamış aday yok — önce `ytoto konu topla` çalıştırın.")
+        return 1
+
+    if kuru:
+        # Kabul ölçütü: kuru koşum sondaj sayısını ve maliyeti ÖNCEDEN bildirir.
+        # Tavana takılacak sondaj sayısı da burada hesaplanıyor — "10 istedim,
+        # 4 oldu" sürprizini koşum sırasında değil öncesinde görmek gerekiyor.
+        kalan_tavan = bosluk.SONDAJ_KOTA_TAVANI - sayac.surec_harcamasi
+        sigan = max(kalan_tavan // bosluk.SONDAJ_MALIYETI, 0)
+        yapilacak = min(len(adaylar), sigan)
+        print("KURU KOŞUM — talep-arz sondajı")
+        print(f"  {len(adaylar)} aday hazır, tavana {sigan} sondaj sığıyor → {yapilacak} sondaj")
+        print(
+            f"  sondaj başına {bosluk.SONDAJ_MALIYETI} birim "
+            f"({kota.MALIYET['search.list']} + {kota.MALIYET['videos.list']} + "
+            f"{kota.MALIYET['channels.list']})"
+        )
+        print(f"  tahmini maliyet: {yapilacak * bosluk.SONDAJ_MALIYETI} birim")
+        print(f"  boşluk bugün: {sayac.surec_harcamasi}/{bosluk.SONDAJ_KOTA_TAVANI} birim")
+        print(f"  yükleme rezervi: {kota.video_basina_maliyet()} birim (dokunulmaz)")
+        print(f"  ortak kota: {sayac.ozet()}")
+        for aday in adaylar[: max(yapilacak, 1)][:5]:
+            print(
+                f"    · [{aday['sinif']}] {aday['dil']}: "
+                f"{aday['baslik'].replace('_', ' ')} ({aday['okunma']:,} okunma)"
+                f' → "{bosluk.sorguya_cevir(aday["baslik"])}"'
+            )
+        return 0
+
+    try:
+        istemci = _istemci_kur()
+    except RuntimeError as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    sonuc = bosluk.arastir(istemci, sayac, yol, limit=limit)
+    print(sonuc.ozet())
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    if sonuc.gecersiz:
+        print(
+            f"⚠️ {sonuc.gecersiz} sondajda arama boş döndü. Bunlar 'arzı yok' "
+            "değil 'sorgu şüpheli' demek ve skorlanmıyor.",
+            file=sys.stderr,
+        )
+    return 1 if sonuc.sondaj == 0 else 0
+
+
+def _bosluk_rapor(*, limit: int) -> int:
+    kayitlar = bosluk.bosluklar(depo.varsayilan_yol(), limit=limit)
+    if not kayitlar:
+        print("Ölçüm yok — önce `ytoto bosluk arastir` çalıştırın.")
+        return 1
+    print(f"{len(kayitlar)} ölçülmüş aday · skor = log(talep) − arz gücü\n")
+    for kayit in kayitlar:
+        print(f"  {kayit.satir()}")
+    print(
+        "\nℹ️ Skor bir sıralamadır, eşik değildir: Wikipedia okunması ile YouTube "
+        "izlenmesi farklı ölçeklerde olduğu için işaret henüz kalibre edilmedi. "
+        "Adayları birbirine göre karşılaştırın, sıfırı sınır saymayın.",
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -282,6 +363,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     rapor.add_argument("--limit", type=int, default=25, help="Kaç satır basılsın")
 
+    bosluk_ay = altlar.add_parser("bosluk", help="Talep-arz boşluğu sondajı ve skorlaması")
+    bosluk_altlar = bosluk_ay.add_subparsers(dest="bosluk_komutu", required=True)
+
+    ba = bosluk_altlar.add_parser(
+        "arastir", help=f"Adayların arzını ölç (sondaj başına {bosluk.SONDAJ_MALIYETI} birim)"
+    )
+    ba.add_argument("--limit", type=int, default=10, help="En fazla kaç sondaj")
+    ba.add_argument(
+        "--kuru", action="store_true", help="Hiç çağrı yapma, sondaj sayısını ve maliyeti bildir"
+    )
+
+    br = bosluk_altlar.add_parser("rapor", help="Ölçülmüş adayları skora göre sırala (ücretsiz)")
+    br.add_argument("--limit", type=int, default=25)
+
     konu_ay = altlar.add_parser("konu", help="Wikipedia okunma sıçramaları (kota harcamaz)")
     konu_altlar = konu_ay.add_subparsers(dest="konu_komutu", required=True)
 
@@ -322,6 +417,11 @@ def main(argv: list[str] | None = None) -> int:
                 sirala=args.sirala,
                 limit=args.limit,
             )
+    if args.komut == "bosluk":
+        if args.bosluk_komutu == "arastir":
+            return _bosluk_arastir(limit=args.limit, kuru=args.kuru)
+        if args.bosluk_komutu == "rapor":
+            return _bosluk_rapor(limit=args.limit)
     if args.komut == "konu":
         if args.konu_komutu == "topla":
             return _konu_topla(diller=args.diller, gun=args.gun, adet=args.adet)
