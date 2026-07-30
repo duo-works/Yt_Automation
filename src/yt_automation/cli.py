@@ -22,7 +22,7 @@ from datetime import date
 from pathlib import Path
 
 from . import __version__, depo, kanal, kota
-from .trend import bolge, kaynak, konu_toplayici, siniflandirici, toplayici, wikipedia
+from .trend import bolge, hiz, kaynak, konu_toplayici, siniflandirici, toplayici, wikipedia
 from .video import MetadataHatasi, kuyrugu_oku
 
 ANAHTAR_DEGISKENI = "YOUTUBE_API_KEY"
@@ -112,6 +112,44 @@ def _trend_topla(*, derin: bool, kuru: bool, adet: int) -> int:
     for hata in sonuc.hatalar[:5]:
         print(f"  hata: {hata}", file=sys.stderr)
     return 1 if sonuc.kota_bitti and sonuc.cagri_sayisi == 0 else 0
+
+
+def _trend_rapor(*, bolge_kodu: str | None, siniflar: str | None, sirala: str, limit: int) -> int:
+    """Türetilmiş sinyaller — kota harcamaz, yalnızca depoyu okur."""
+    yol = depo.varsayilan_yol()
+    secilen = tuple(s.strip() for s in siniflar.split(",") if s.strip()) if siniflar else None
+
+    try:
+        # Limit sonda uygulanıyor: özet **bütün** kümeyi anlatmalı, ekrana
+        # basılan ilk N'i değil. Kaç videonun ivmesi olduğunu bilmek, listenin
+        # ne kadar olgunlaştığını gösteren tek sayı.
+        sinyaller = hiz.hesapla(yol, bolge_kodu=bolge_kodu, siniflar=secilen, sirala=sirala)
+    except ValueError as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    if not sinyaller:
+        print("Ölçüm yok — önce `ytoto trend topla` çalıştırın.")
+        return 1
+
+    ozet = hiz.rapor_ozeti(yol, sinyaller)
+    print(f"{ozet.ozet()} · sıralama: {sirala}\n")
+    for sira, sinyal in enumerate(sinyaller[:limit], start=1):
+        print(f"  {sira:>3}. {sinyal.satir()}")
+
+    if ozet.kosu_sayisi < 2:
+        print(
+            "\n⚠️ Tek koşu var: hız ve ivme hesaplanamıyor, sıralama izlenmeye düşüyor. "
+            f"En az {hiz.ASGARI_ARALIK_SAAT * 60:.0f} dakika arayla ikinci bir "
+            "`ytoto trend topla` gerekiyor.",
+            file=sys.stderr,
+        )
+    elif ozet.ivmesi_olan == 0:
+        print(
+            "\n⚠️ Hiçbir videonun ivmesi yok: ivme üç ölçüm istiyor. Üçüncü koşumdan sonra dolacak.",
+            file=sys.stderr,
+        )
+    return 0
 
 
 def _konu_topla(*, diller: str, gun: str | None, adet: int) -> int:
@@ -231,6 +269,19 @@ def main(argv: list[str] | None = None) -> int:
         "--kuru", action="store_true", help="Hiç çağrı yapma, yalnızca maliyeti bildir"
     )
 
+    rapor = trend_altlar.add_parser(
+        "rapor", help="Hız, ivme ve yaşa göre normalize sinyaller (kota harcamaz)"
+    )
+    rapor.add_argument("--bolge", help="Yalnızca bu bölgede görünenler (örn. TR)")
+    rapor.add_argument("--sinif", help="Virgülle ayrık: tarih,bilim,belirsiz,diger")
+    rapor.add_argument(
+        "--sirala",
+        default="ivme",
+        choices=hiz.SIRALAMA_ALANLARI,
+        help="Sıralama ölçütü (varsayılan: ivme — asıl trend göstergesi)",
+    )
+    rapor.add_argument("--limit", type=int, default=25, help="Kaç satır basılsın")
+
     konu_ay = altlar.add_parser("konu", help="Wikipedia okunma sıçramaları (kota harcamaz)")
     konu_altlar = konu_ay.add_subparsers(dest="konu_komutu", required=True)
 
@@ -261,8 +312,16 @@ def main(argv: list[str] | None = None) -> int:
     args = ayristirici.parse_args(argv)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
-    if args.komut == "trend" and args.trend_komutu == "topla":
-        return _trend_topla(derin=args.derin, kuru=args.kuru, adet=args.adet)
+    if args.komut == "trend":
+        if args.trend_komutu == "topla":
+            return _trend_topla(derin=args.derin, kuru=args.kuru, adet=args.adet)
+        if args.trend_komutu == "rapor":
+            return _trend_rapor(
+                bolge_kodu=args.bolge,
+                siniflar=args.sinif,
+                sirala=args.sirala,
+                limit=args.limit,
+            )
     if args.komut == "konu":
         if args.konu_komutu == "topla":
             return _konu_topla(diller=args.diller, gun=args.gun, adet=args.adet)
