@@ -23,11 +23,27 @@ set -uo pipefail
 ETIKET="works.duo.yt-trend"
 KAYNAK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Kod worktree'de; veri ve sırlar geliştirme ağacında kalıyor. İkisi de
+# ⚠️ Bu betik bir geliştirme worktree'sinden de çalıştırılabiliyor (ajanlar
+# öyle çalışıyor). O durumda `$KAYNAK` worktree'yi gösterir ve orada ne `.env`
+# ne `veri/` vardır — kurulum sessizce boş bir veritabanına bağlanırdı. Bu
+# fiilen oldu. `--git-common-dir` her worktree'de ANA deponun `.git`'ini
+# gösterdiği için veri ve sırlar her zaman ana ağaçta aranıyor.
+ORTAK_GIT="$(git -C "$KAYNAK" rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$ORTAK_GIT" ]; then
+    case "$ORTAK_GIT" in
+    /*) ;;
+    *) ORTAK_GIT="$KAYNAK/$ORTAK_GIT" ;;
+    esac
+    ANA_AGAC="$(cd "$(dirname "$ORTAK_GIT")" && pwd)"
+else
+    ANA_AGAC="$KAYNAK"
+fi
+
+# Kod worktree'de; veri ve sırlar ana geliştirme ağacında kalıyor. İkisi de
 # gitignore'da olduğu için dal değişiminden zaten etkilenmiyorlar.
 CALISMA="${YT_OTOMASYON_CALISMA:-$HOME/.yt-otomasyon/calisan}"
-VERI="${YT_OTOMASYON_VERI:-$KAYNAK/veri}"
-ENV_DOSYA="${YT_OTOMASYON_ENV:-$KAYNAK/.env}"
+VERI="${YT_OTOMASYON_VERI:-$ANA_AGAC/veri}"
+ENV_DOSYA="${YT_OTOMASYON_ENV:-$ANA_AGAC/.env}"
 
 SABLON="$KAYNAK/scripts/$ETIKET.plist"
 BETIK="$CALISMA/scripts/saatlik-tarama.sh"
@@ -113,7 +129,14 @@ yeniden_yukle() {
 case "$komut" in
 kur)
     macos_ol
-    [ -f "$ENV_DOSYA" ] || echo "⚠️  .env yok ($ENV_DOSYA) — YOUTUBE_API_KEY olmadan tarama başarısız olur"
+    # Uyarı yetmiyor: sırsız kurulan görev saat başı önuçuşta düşer ve geriye
+    # yalnızca günlük satırı kalır. Kurulum anında durmak doğrusu.
+    [ -f "$ENV_DOSYA" ] || {
+        echo "❌ .env yok: $ENV_DOSYA" >&2
+        echo "   YOUTUBE_API_KEY olmadan kurulan görev her saat sessizce düşer." >&2
+        echo "   Başka bir yol için: YT_OTOMASYON_ENV=<yol> $0 kur" >&2
+        exit 1
+    }
 
     worktree_hazirla || exit 1
     venv_hazirla || exit 1

@@ -177,6 +177,48 @@ def test_env_ornegi_yeni_degiskenleri_belgeliyor():
         assert f"\n{degisken}=\n" in ornek, f"{degisken} .env.example'da değersiz yok"
 
 
+def test_kurulum_veri_yolunu_ana_agacta_ariyor(tmp_path: Path):
+    """Geliştirme worktree'sinden çalıştırılsa bile veri ANA ağaçta aranmalı.
+
+    Bu fiilen ters gitti: betik bir ajan worktree'sinden koşturulunca `.env`
+    ve `veri/` orada arandı, ikisi de yoktu ve görev boş bir veritabanına
+    bağlanacaktı — ADR-0008'in "iki ayrı veritabanı" hatasının başka kapıdan
+    gelen hâli. `--git-common-dir` her worktree'de ana depoyu gösteriyor.
+    """
+    ana = tmp_path / "ana"
+    (ana / "scripts").mkdir(parents=True)
+    shutil.copy(BETIKLER / "zamanlama-kur.sh", ana / "scripts" / "zamanlama-kur.sh")
+
+    kimlik = ["-c", "user.email=test@duo.works", "-c", "user.name=test"]
+    subprocess.run(["git", "init", "-q", "-b", "main", str(ana)], check=True)
+    subprocess.run(["git", "-C", str(ana), *kimlik, "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(ana), *kimlik, "commit", "-qm", "ilk"], check=True)
+
+    dal = tmp_path / "dal"
+    subprocess.run(
+        ["git", "-C", str(ana), "worktree", "add", "-q", "--detach", str(dal)], check=True
+    )
+
+    sonuc = subprocess.run(
+        ["bash", str(dal / "scripts" / "zamanlama-kur.sh"), "durum"],
+        env={"HOME": str(tmp_path), "PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert str(ana / "veri") in sonuc.stdout, sonuc.stdout
+    assert str(dal / "veri") not in sonuc.stdout
+
+
+def test_kurulum_sirsiz_kurmuyor():
+    """`.env` yoksa `kur` durmalı — uyarıp devam etmek sessiz ölüm üretiyor."""
+    kurulum = (BETIKLER / "zamanlama-kur.sh").read_text(encoding="utf-8")
+    kur_blogu = kurulum.split('case "$komut" in')[1].split("tazele)")[0]
+    assert 'echo "❌ .env yok' in kur_blogu
+    assert "exit 1" in kur_blogu
+
+
 def test_kurulum_worktree_kuruyor_ve_tazeleme_sunuyor():
     """ADR-0008'in özü: kod ayrı worktree'de ve ref bilinçli seçiliyor."""
     kurulum = (BETIKLER / "zamanlama-kur.sh").read_text(encoding="utf-8")
