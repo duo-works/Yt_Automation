@@ -55,12 +55,31 @@ adim() {
     fi
 
     kaydet "huni · $ad başlıyor"
-    if "$PY" -m yt_automation.cli "$@" >> "$GUNLUK" 2>&1; then
+
+    # Çıktı önce yakalanıyor: "boş gün" ile "gerçek hata" ayrımı buna bakıyor.
+    local cikti kod
+    cikti="$("$PY" -m yt_automation.cli "$@" 2>&1)"
+    kod=$?
+    printf '%s\n' "$cikti" >> "$GUNLUK"
+
+    if [ "$kod" = "0" ]; then
         kaydet "huni · $ad tamam"
-    else
-        kaydet "HATA: huni · $ad başarısız (çıkış $?)"
-        basarisiz=1
+        return 0
     fi
+
+    # ⚠️ Bu adımların üçü de (`bosluk arastir`, `konu kaynak`, `trend aktar`)
+    # işlenecek aday kalmadığında sıfırdan farklı dönüyor. Bu bir hata DEĞİL:
+    # sondaj tavanı dolduğunda ya da o günün adayları zaten aktarılmışsa
+    # normal hâl. Boş günü hata sayarsak bildirim her gün gelir, kimse bakmaz
+    # ve DW-47'nin çözdüğü sessiz başarısızlık bu kez gürültünün içinde
+    # kaybolur. Desen CLI'ın kendi metnine dayanıyor ve testle kilitli.
+    if printf '%s' "$cikti" | grep -qi "aday yok"; then
+        kaydet "huni · $ad — işlenecek aday yok (boş gün, hata değil)"
+        return 0
+    fi
+
+    kaydet "HATA: huni · $ad başarısız (çıkış $kod)"
+    basarisiz=1
 }
 
 if [ "$kuru" = "0" ]; then

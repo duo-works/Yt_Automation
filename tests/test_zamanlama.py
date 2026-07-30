@@ -128,6 +128,41 @@ def test_huni_nobeti_yalnizca_basarida_konuyor():
     assert 'touch "$HUNI_NOBET"' not in hata_dali
 
 
+def test_bos_gun_hata_sayilmiyor():
+    """İşlenecek aday kalmaması normal hâl; bildirim tetiklememeli.
+
+    Sondaj tavanı dolduğunda ya da o günün adayları zaten aktarılmışsa üç
+    adım birden sıfırdan farklı dönüyor. Boş günü hata sayarsak bildirim her
+    gün gelir, kimse bakmaz ve DW-47'nin çözdüğü sessiz başarısızlık bu kez
+    gürültünün içinde kaybolur.
+    """
+    metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
+    assert 'grep -qi "aday yok"' in metin
+
+
+@pytest.mark.parametrize(
+    "cagri",
+    [
+        ["bosluk", "arastir"],
+        ["konu", "kaynak"],
+        ["trend", "aktar"],
+        ["konu", "listele"],
+    ],
+    ids=lambda c: " ".join(c),
+)
+def test_bos_sonuc_metni_huninin_bekledigi_gibi(cagri, tmp_path, monkeypatch, capsys):
+    """Boş sonuç mesajları "aday yok" ifadesini taşımaya devam ediyor mu.
+
+    `gunluk-huni.sh` boş günü bu metinden tanıyor. Mesaj yeniden yazılırsa
+    huni her boş günü hata sayar ve gece yarısı yanlış alarm üretir — bunu
+    üretimde değil burada yakalamak istiyoruz.
+    """
+    monkeypatch.setenv("YT_OTOMASYON_VERI", str(tmp_path))
+    assert cli.main(cagri) != 0
+    cikti = capsys.readouterr()
+    assert "aday yok" in (cikti.out + cikti.err).lower()
+
+
 def test_env_bos_degeri_launchd_yolunu_ezemez(tmp_path: Path):
     """`.env`'deki boş `YT_OTOMASYON_VERI` plist'ten geleni ezmemeli.
 
