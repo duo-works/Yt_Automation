@@ -60,7 +60,7 @@ ASGARI_YAS_SAAT = 1.0
 SIRALAMA_ALANLARI = ("ivme", "hiz", "yas", "izlenme")
 
 
-def _zamana_cevir(metin: str | None) -> datetime | None:
+def zamana_cevir(metin: str | None) -> datetime | None:
     """ISO 8601 metnini UTC'ye demirlenmiş `datetime`a çevirir.
 
     İki farklı kaynak var ve biçimleri farklı: `olcum.an` bizim yazdığımız
@@ -281,7 +281,7 @@ def _serileri_oku(baglanti, bolge_kodu: str | None) -> dict[str, list[Nokta]]:
 
     seriler: dict[str, list[Nokta]] = {}
     for satir in satirlar:
-        an = _zamana_cevir(satir["an"])
+        an = zamana_cevir(satir["an"])
         if an is None or satir["izlenme"] is None:
             # İzlenmesi gizli bir ölçüm hız hesabına giremez. Atlamak, sıfır
             # varsaymaktan iyi: sıfır varsaymak sahte bir çöküş üretirdi.
@@ -344,8 +344,8 @@ def hesapla(
         sonuclar.append(
             turet(
                 seri,
-                yayin_zamani=_zamana_cevir(ust["yayin_zamani"]),
-                ilk_gorulme=_zamana_cevir(ust["ilk_gorulme"]),
+                yayin_zamani=zamana_cevir(ust["yayin_zamani"]),
+                ilk_gorulme=zamana_cevir(ust["ilk_gorulme"]),
                 en_son_kosu=en_son_kosu,
                 sinyal=Sinyal(
                     video_id=video_id,
