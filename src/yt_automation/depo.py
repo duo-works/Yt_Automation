@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 VARSAYILAN_DIZIN = "veri"
@@ -178,12 +178,11 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # özelliği**: yarışı başkası kazandıysa bizim için de kurulmuş demektir.
     # Bu yüzden hata yutuluyor — kaybetmek zararsız.
     if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
-        try:
+        # Hata yutuluyor: başka bir bağlantı tam bu anda kuruyor olabilir. O
+        # durumda bu bağlantı bu seferlik eski kip'te çalışır — doğruluk
+        # etkilenmez, yalnızca eşzamanlılık.
+        with suppress(sqlite3.OperationalError):
             baglanti.execute("PRAGMA journal_mode=WAL")
-        except sqlite3.OperationalError:
-            # Başka bir bağlantı tam bu anda kuruyor. Bu bağlantı bu seferlik
-            # eski kip'te çalışır — doğruluk etkilenmez, yalnızca eşzamanlılık.
-            pass
 
     # Aynı gerekçe şema için: `CREATE TABLE IF NOT EXISTS` var olan tabloda
     # işe yaramıyor ama yine de yazma kilidi alıyor. `user_version` ucuz bir
