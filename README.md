@@ -14,11 +14,15 @@
 
 ## Bu proje şu an nerede
 
-**Henüz kod yok.** Proje planlama aşamasında:
+**İskelet `main`'de çalışıyor, yükleme hattı henüz yok.**
 
-- **Kapsam** — PRD taslak halinde, 6 açık sorusu var (DW-5)
-- **Teknoloji yığını** — henüz seçilmedi (DW-6). Bu yüzden CI'ın Node ve Python job'ları atlanıyor.
-- **Deploy hedefi** — belirlenmedi (DW-8)
+- **Teknoloji yığını** — seçildi (DW-6): Python 3.13, resmî Google istemcileri, dosya tabanlı girdi. Gerekçe: [`docs/decisions/0004-teknoloji-yigini.md`](docs/decisions/0004-teknoloji-yigini.md)
+- **`main`'de ne var** — `ytoto` CLI'ı, metadata doğrulama ve kota muhasebesi (`src/yt_automation/`)
+- **Kapsam** — PRD'de kesinleşti; v1'i bloke eden açık soru kalmadı
+- **Yükleme hattı** — OAuth (DW-21), `videos.insert` (DW-22) ve thumbnail (DW-23) inceleme aşamasında, henüz `main`'de değil
+- **Deploy hedefi** — belirlenmedi (DW-8). v1 yerelde elle çalışıyor.
+
+> CI'da bir dilin job'ı **atlanmış** görünüyorsa sebebi yığının seçilmemiş olması değil, o branch'te o dile ait dosyanın değişmemesidir — `Stack tespiti` job'ı değişen dosyalara bakarak karar veriyor.
 
 Canlı durum için **[📋 Görevler](https://app.notion.com/p/93190546ef3941c88ab1d2bd0d1fface)**'e bakın — burası hızla eskir, orası eskimez.
 
@@ -53,13 +57,24 @@ Canlı durum için **[📋 Görevler](https://app.notion.com/p/93190546ef3941c88
 
 ## Kurulum
 
+Python 3.13 gerekiyor.
+
 ```bash
 gh repo clone duo-works/Yt_Automation
 cd Yt_Automation
 cp .env.example .env    # gerçek değerleri parola yöneticisinden alın
+
+python3.13 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
 ```
 
-<!-- Stack seçildikten sonra (DW-6) buraya bağımlılık kurulum ve çalıştırma adımları eklenir. -->
+Doğrulama:
+
+```bash
+.venv/bin/pytest          # testler
+.venv/bin/ruff check .    # lint
+.venv/bin/ytoto --help    # CLI
+```
 
 ---
 
