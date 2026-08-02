@@ -11,7 +11,21 @@ on:
   # ve kimse fark etmez. DW-24'ün WAL yarışı tam böyle üç PR taşındı.
   #
   # Bedeli: her yığılmış PR ayrıca CI koşar. İki kişilik ekipte önemsiz.
+  #
+  # ⚠️ `types` **açıkça** yazılmak zorunda. Belirtilmezse GitHub varsayılanı
+  # kullanıyor: `opened`, `synchronize`, `reopened`. Taban dal değişimi
+  # bunların hiçbiri değil — `edited` üretiyor.
+  #
+  # Bu, DW-33'ün (dal filtresi) hemen ardından aynı sınıftan ikinci hata
+  # olarak çıktı. #6 merge edilince GitHub #7'yi otomatik `main`'e çevirdi
+  # ama CI koşmadı; `ci-ok` zorunlu context olduğu için #7 merge edilemez
+  # hâle geldi. Yığın 12 kat ve bu her halkada tekrarlıyordu.
+  #
+  # `edited` başlık/gövde düzenlemesinde de ateşleniyor — birkaç fazladan
+  # koşum. Yukarıdaki gerekçenin aynısı: iki kişilik ekipte önemsiz, ama
+  # yeniden hedeflenen bir PR'ın sessizce kontrolsüz kalması değil.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
