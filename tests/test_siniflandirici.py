@@ -123,6 +123,72 @@ def test_sonuc_kalici_yazilir(yol: Path, belirsiz_kuyruk):
     assert sinif_oku(yol, "Paul_Newman") == ("diger", "llm")
 
 
+def test_okunur_bicimde_donen_baslik_yazilir(yol: Path, belirsiz_kuyruk):
+    """Model, `_istem()`'in gösterdiği alt çizgisiz biçimi döndürebilir.
+
+    Canlı koşumda 300 makalenin 273'ü tam bu yüzden düştü: istem başlığı
+    `Bill Oddie` diye gösterip kod `Bill_Oddie` bekliyordu. Eski testler
+    yakalayamadı çünkü fixture başlıklarının hepsi tek kelimeydi — tek
+    kelimede iki biçim aynı ve hata görünmüyor.
+    """
+    belirsiz_kuyruk([("Bill_Oddie", 5000), ("Tim_Brooke-Taylor", 3000)])
+    llm = SahteLLM(
+        [
+            SahteYanit(
+                [
+                    {"baslik": "Bill Oddie", "sinif": "diger", "gerekce": "komedyen"},
+                    {"baslik": "Tim Brooke-Taylor", "sinif": "diger", "gerekce": "komedyen"},
+                ]
+            )
+        ]
+    )
+    sonuc = siniflandirici.siniflandir(llm, yol)
+
+    assert sonuc.hatalar == []
+    assert sonuc.sorulan == 2
+    assert sinif_oku(yol, "Bill_Oddie") == ("diger", "llm")
+    assert sinif_oku(yol, "Tim_Brooke-Taylor") == ("diger", "llm")
+
+
+def test_alt_cizgili_bicimde_donen_baslik_da_yazilir(yol: Path, belirsiz_kuyruk):
+    """Model bazen depo biçimini döndürüyor; ikisi de kabul edilmeli.
+
+    Hata nondeterministikti: eski istem "alt çizgiler dahil" diyordu ama
+    alt çizgiyi hiç göstermiyordu, model bazen ekliyor bazen eklemiyordu.
+    """
+    belirsiz_kuyruk([("Bill_Oddie", 5000)])
+    llm = SahteLLM([SahteYanit([{"baslik": "Bill_Oddie", "sinif": "diger", "gerekce": "x"}])])
+    sonuc = siniflandirici.siniflandir(llm, yol)
+
+    assert sonuc.hatalar == []
+    assert sinif_oku(yol, "Bill_Oddie") == ("diger", "llm")
+
+
+def test_dil_oneki_ile_donen_baslik_yazilir(yol: Path, belirsiz_kuyruk):
+    """Model satır başındaki `[de]` etiketini başlığa katabiliyor.
+
+    İlk düzeltmeden sonra kalan 40 hatanın tamamı buydu: istem satırları
+    `- [de] Dean Reed` biçimindeydi. İstem artık dili bir kez üstte söylüyor,
+    ama gelen önek yine de hoş görülüyor.
+    """
+    belirsiz_kuyruk([("Dean_Reed", 5000)], dil="de")
+    llm = SahteLLM([SahteYanit([{"baslik": "[de] Dean Reed", "sinif": "diger", "gerekce": "x"}])])
+    sonuc = siniflandirici.siniflandir(llm, yol)
+
+    assert sonuc.hatalar == []
+    assert sinif_oku(yol, "Dean_Reed") == ("diger", "llm")
+
+
+def test_istem_dili_satir_basina_tekrarlamaz(yol: Path):
+    """Dil bir kez üstte; satırlar yalnızca başlık taşır."""
+    kayitlar = [{"dil": "de", "baslik": "Dean_Reed", "okunma": 100}]
+    istem = siniflandirici._istem(kayitlar, {})
+
+    assert "de.wikipedia" in istem
+    assert "- Dean Reed" in istem
+    assert "[de]" not in istem
+
+
 def test_siniflandirilan_makale_kuyruktan_cikar(yol: Path, belirsiz_kuyruk):
     """Önbelleğin özü: aynı makale ikinci kez LLM'e gitmemeli."""
     belirsiz_kuyruk([("Homer", 5000)])

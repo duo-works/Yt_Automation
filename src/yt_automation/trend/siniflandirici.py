@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +40,9 @@ MODEL = "claude-opus-5"
 GRUP_BOYUTU = 20
 
 SINIFLAR = ("tarih", "bilim", "diger")
+
+# Modelin başlığa katabildiği `[en] ` / `[de] ` biçimli dil öneki.
+_ONEK = re.compile(r"^\[[a-z]{2,3}\]\s*")
 
 YONERGE = """Sen bir YouTube kanalı için konu seçen bir sınıflandırıcısın.
 Kanal **tarih** ve **bilim** içeriği üretiyor.
@@ -148,19 +152,24 @@ def bekleyenler(yol: Path, limit: int = 200) -> list[dict]:
 
 
 def _istem(kayitlar: list[dict], ozetler: dict[str, str]) -> str:
+    # ⚠️ Dil satır başına yazılmıyor, bir kez üstte söyleniyor. Eskiden her
+    # satır `- [de] Dean Reed` biçimindeydi ve model dil etiketini başlığın
+    # parçası sanıp `baslik` alanında geri döndürüyordu — canlı koşumda 40
+    # makale bu yüzden eşleşmedi. Zaten `siniflandir()` grupları dile göre
+    # ayırıyor, yani satır başına tekrarlamanın bilgi değeri de yoktu.
+    dil = kayitlar[0]["dil"] if kayitlar else ""
     satirlar = []
     for k in kayitlar:
         baslik = k["baslik"].replace("_", " ")
         ozet = ozetler.get(k["baslik"], "")
-        parca = f"- [{k['dil']}] {baslik}"
+        parca = f"- {baslik}"
         if ozet:
             # Giriş paragrafı uzun olabiliyor; ilk cümleler ayrımı zaten veriyor.
             parca += f"\n  {ozet[:400]}"
         satirlar.append(parca)
     return (
-        "Aşağıdaki Wikipedia makalelerini sınıflandır. Her biri için `baslik` "
-        "alanını **verildiği gibi** (tire ve alt çizgiler dahil) geri döndür.\n\n"
-        + "\n".join(satirlar)
+        f"Aşağıdaki makaleler {dil}.wikipedia'dan geliyor. Her birini sınıflandır "
+        "ve `baslik` alanını **listede yazdığı gibi** geri döndür.\n\n" + "\n".join(satirlar)
     )
 
 
@@ -211,14 +220,32 @@ def siniflandir(
 
 
 def _yaz(yol: Path, dil: str, grup: list[dict], yanitlar: list[dict], sonuc) -> None:
-    beklenen = {k["baslik"] for k in grup}
+    # ⚠️ Başlık iki biçimde dolaşıyor ve ikisi de eşleşmeye kabul edilmeli:
+    # depoda Wikipedia'nın alt çizgili biçimi (`Bill_Oddie`, birincil anahtar),
+    # modele ise `_istem()` okunur biçimi gösteriyor (`Bill Oddie`).
+    #
+    # Yalnızca depo biçimini beklemek canlı veride hattı fiilen durdurdu:
+    # 300 makalenin 273'ü "tanınmayan yanıt" ile düştü (%91). Model gördüğünü
+    # döndürüyordu; kod göstermediği biçimi arıyordu. Testler yakalayamadı
+    # çünkü fixture başlıklarının hepsi tek kelimeydi ve tek kelimede iki
+    # biçim aynı.
+    esleme: dict[str, str] = {}
+    for k in grup:
+        esleme[k["baslik"]] = k["baslik"]
+        esleme[k["baslik"].replace("_", " ")] = k["baslik"]
+
     with depo.yazma_islemi(yol) as baglanti:
         for kayit in yanitlar:
-            baslik = kayit.get("baslik", "")
-            # Model başlığı değiştirmiş olabilir; grupta yoksa yazma —
+            ham = kayit.get("baslik", "")
+            # Eski istem biçiminden kalma `[dil] ` önekini de hoş gör: model
+            # satır başındaki etiketi başlığa katabiliyor. İstem düzeltildi
+            # ama tolerans ucuz ve aynı hatanın tekrarını sessizce yutmuyor.
+            ham = _ONEK.sub("", ham, count=1)
+            # Model başlığı büsbütün değiştirmiş olabilir; grupta yoksa yazma —
             # yanlış satırı güncellemektense atlamak yeğdir.
-            if baslik not in beklenen or kayit.get("sinif") not in SINIFLAR:
-                sonuc.hatalar.append(f"{dil}: tanınmayan yanıt {baslik!r}")
+            baslik = esleme.get(ham, "")
+            if not baslik or kayit.get("sinif") not in SINIFLAR:
+                sonuc.hatalar.append(f"{dil}: tanınmayan yanıt {ham!r}")
                 continue
             # ⚠️ `dil` yazılmıyor: `makale`'nin birincil anahtarı (dil, baslik)
             # ve `dil` makalenin geldiği **Wikipedia sürümü**. Modelden ayrıca
