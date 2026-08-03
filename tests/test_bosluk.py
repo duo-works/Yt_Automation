@@ -3,6 +3,7 @@
 Hiç canlı çağrı yok: `search.list` 100 birim ve CI'da tekrarlanamaz.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -660,3 +661,226 @@ def test_cli_aday_yoksa_uyarir(yol: Path, monkeypatch, capsys):
     monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
     assert cli.main(["bosluk", "arastir", "--kuru"]) == 1
     assert "konu topla" in capsys.readouterr().out
+
+
+# --- Kapılar (DW-51) -----------------------------------------------------
+#
+# Bu bölüm iki ölçülmüş kusuru kilitliyor (2026-08-03, 73 canlı sondaj):
+#
+#   1. Tek küresel eşik dil seçiyor, aday değil — 0,0 eşiğinde geçen 3 adayın
+#      3'ü de Almanca'ydı, çünkü skorun mutlak seviyesi pazar büyüklüğünü
+#      kodluyor (en arz medyanı 1.296.193 izlenme, de 58.040).
+#   2. Salt göreli eşik "kötünün en iyisi"ni geçiriyor — günde 328 okunan ve
+#      50/50 doymuş bir konu, yalnızca dilinin tabanı daha kötü olduğu için.
+
+
+def _olcum_yaz(
+    yol: Path, qid: str, dil: str, *, izlenme: int, alakali: int = 30, abone: int = 5_000
+):
+    """Sondajı taklit etmeden doğrudan `arz` satırı — kapı testleri ölçümün
+    nasıl toplandığıyla değil, ne anlama geldiğiyle ilgileniyor."""
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid=qid,
+            dil=dil,
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=50,
+            alakali=alakali,
+            medyan_izlenme=izlenme,
+            ust_izlenme=izlenme * 2,
+            medyan_yas_gun=300,
+            medyan_abone=abone,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+        ),
+    )
+
+
+def _dil_kur(aday, yol: Path, dil: str, *, izlenme: int, okunma: int, adet: int = 6):
+    """Bir dilin tabanını kuran sıradan adaylar — taban buradan çıkıyor.
+
+    İzlenme **katlanarak** artıyor, sabit ekleyerek değil: skor log ölçekte ve
+    400.000'e 1.000 eklemek log10'da 0,001 oynatır. Öyle bir örneklemin MAD'i
+    sıfıra yakın çıkar ve her sapma devasa bir z üretir — testi geçiren ama
+    gerçeği temsil etmeyen bir kurulum olurdu.
+    """
+    for i in range(adet):
+        qid = f"{dil.upper()}{i}"
+        aday(qid, f"{dil}_sirade_{i}", dil=dil, okunma=okunma)
+        _olcum_yaz(yol, qid, dil, izlenme=izlenme * 2**i)
+
+
+def test_taban_ornek_yetmezse_kalibre_edilmez(yol: Path, aday):
+    """`nis._taban` idiyomu: yetersiz örneklemden çıkan taban güvenilmez."""
+    for i in range(bosluk.ASGARI_TABAN_ORNEK - 1):
+        aday(f"AZ{i}", f"az_{i}", dil="xx", okunma=50_000)
+        _olcum_yaz(yol, f"AZ{i}", "xx", izlenme=1_000 + i * 500)
+
+    kayitlar = bosluk.bosluklar(yol)
+    assert kayitlar, "ölçümler yazıldı"
+    assert all(k.kalibre is None for k in kayitlar)
+    assert all(bosluk.red_gerekcesi(k) == bosluk.RED_TABAN for k in kayitlar)
+
+
+def test_kucuk_pazarin_iyi_adayi_buyuk_pazarin_vasatina_yeniliyordu(yol: Path, aday):
+    """Asıl regresyon: ham skor pazar büyüklüğünü kodluyor.
+
+    `buyuk` dili yüksek talep + düşük arz, `kucuk` dili düşük talep + yüksek
+    arz — yani `kucuk`'ün her adayı ham skorda `buyuk`'ün her adayının altında.
+    Kalibrasyon olmadan `kucuk`'ün yıldızı hiç görünmüyordu.
+    """
+    _dil_kur(aday, yol, "buyuk", izlenme=3_000, okunma=40_000)
+    _dil_kur(aday, yol, "kucuk", izlenme=400_000, okunma=4_000)
+
+    # `kucuk` dilinin yıldızı: kendi pazarında olağandışı derecede boş, ama
+    # **mutlak** olarak hâlâ `buyuk`'ün en kötüsünün altında. Kusurun tam
+    # şekli bu — iyi aday, küçük pazarda olduğu için görünmüyordu.
+    aday("YILDIZ", "kucuk_yildiz", dil="kucuk", okunma=8_000)
+    _olcum_yaz(yol, "YILDIZ", "kucuk", izlenme=35_000)
+
+    kayitlar = bosluk.bosluklar(yol)
+    ham_sirali = sorted(kayitlar, key=lambda k: -k.skor)
+    yildiz = next(k for k in kayitlar if k.qid == "YILDIZ")
+
+    assert ham_sirali[0].dil == "buyuk", "ham skor büyük pazarı öne alıyor — kusurun kendisi"
+    assert yildiz.skor < min(k.skor for k in kayitlar if k.dil == "buyuk"), (
+        "yıldız ham skorda `buyuk`'ün tamamının altında — kalibrasyonsuz hiç seçilemezdi"
+    )
+
+    assert kayitlar[0].qid == "YILDIZ", "kalibre sıralama küçük pazarın yıldızını öne almalı"
+    gecenler = [k for k in kayitlar if bosluk.red_gerekcesi(k) is None]
+    assert [k.qid for k in gecenler] == ["YILDIZ"], (
+        "kapıyı yalnızca yıldız geçmeli: `buyuk`'ün adayları mutlak skorda yüksek ama "
+        "kendi pazarlarında sıradan"
+    )
+
+
+def test_dilinin_en_iyisi_olmak_talep_esigini_gecmeye_yetmez(yol: Path, aday):
+    """ "Kötünün en iyisi" vakası — canlı veride üç kez çıktı (hi 328, hi 419,
+    ar 596 okunma/gün, üçü de 50/50 alakalı)."""
+    _dil_kur(aday, yol, "sonuk", izlenme=500_000, okunma=300)
+
+    aday("SEFIL", "sonuk_yildiz", dil="sonuk", okunma=bosluk.ASGARI_TALEP - 1)
+    _olcum_yaz(yol, "SEFIL", "sonuk", izlenme=2_000, alakali=50, abone=1_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "SEFIL")
+    assert kayit.kalibre >= bosluk.ESIK_KALIBRE, "göreli kapıyı geçiyor"
+    assert bosluk.red_gerekcesi(kayit) == bosluk.RED_TALEP, "mutlak kapı durdurmalı"
+
+
+def test_talep_esigi_tam_sinirda_gecirir(yol: Path, aday):
+    """Eşik dahil: `>=`, `>` değil. Bir okunma farkı sessizce eleme yapmasın."""
+    _dil_kur(aday, yol, "sinir", izlenme=500_000, okunma=bosluk.ASGARI_TALEP)
+
+    aday("SINIR", "sinir_yildiz", dil="sinir", okunma=bosluk.ASGARI_TALEP)
+    _olcum_yaz(yol, "SINIR", "sinir", izlenme=2_000, alakali=50, abone=1_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "SINIR")
+    assert bosluk.red_gerekcesi(kayit) is None
+
+
+def test_gecersiz_olcum_taban_gerekcesine_karismaz(yol: Path, aday):
+    """Sıra önemli: ölçümü bozuk bir aday "talebi düşük" diye görünmemeli."""
+    _dil_kur(aday, yol, "gecerli", izlenme=5_000, okunma=40_000)
+    aday("BOZUK", "bozuk", dil="gecerli", okunma=40_000)
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid="BOZUK",
+            dil="gecerli",
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=0,
+            alakali=0,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+        ),
+    )
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "BOZUK")
+    assert kayit.skor is None
+    assert bosluk.red_gerekcesi(kayit) == bosluk.RED_OLCUM
+
+
+def test_kapi_hepsini_elerse_gun_bos_gecer_hata_degil(yol: Path, aday, monkeypatch, capsys):
+    """PRD'nin dördüncü karşı önlemi: huni reddedebilmeli.
+
+    Önceden imkânsızdı — `aktarilmamis_bosluklar` skora göre sıralayıp ilk N'i
+    koşulsuz gönderiyordu, yani her gün mutlaka bir şey Notion'a düşerdi.
+    """
+    monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
+    _dil_kur(aday, yol, "doymus", izlenme=800_000, okunma=40_000)
+
+    kod = cli.main(["trend", "aktar", "--kuru"])
+    cikti = capsys.readouterr().out
+
+    assert kod == 0, "eşiği geçen aday çıkmaması hata değil"
+    assert "kapıları geçmedi" in cikti
+    assert bosluk.RED_KALIBRE in cikti, "eleme gerekçesi sayılarak basılmalı"
+
+
+def test_bos_gun_mesaji_huni_betiginin_aradigi_sozu_tasiyor(yol: Path, aday, monkeypatch, capsys):
+    """Diller arası sözleşme: `gunluk-huni.sh` bu metni görünce koşumu boş gün
+    sayıyor (DW-47). Mesaj değişirse gece koşan iş her gün yanlış alarm verir.
+    """
+    monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
+    _dil_kur(aday, yol, "doymus", izlenme=800_000, okunma=40_000)
+    cli.main(["trend", "aktar", "--kuru"])
+    cikti = capsys.readouterr().out
+
+    betik = (Path(__file__).resolve().parent.parent / "scripts" / "gunluk-huni.sh").read_text(
+        encoding="utf-8"
+    )
+    aranan = re.search(r'grep -qi "([^"]+)"', betik)
+    assert aranan, "betikteki boş gün araması bulunamadı"
+    assert aranan.group(1).lower() in cikti.lower()
+
+
+def test_zorla_kapilari_da_aciyor(yol: Path, aday, monkeypatch, capsys):
+    """`--zorla` iki filtreyi birden kaldırıyor; kapının elediğini elle görmek
+    isteyen birinin başka bayrağı yok."""
+    monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
+    _dil_kur(aday, yol, "doymus", izlenme=800_000, okunma=40_000)
+
+    assert cli.main(["trend", "aktar", "--kuru", "--zorla"]) == 0
+    assert "KURU KOŞUM" in capsys.readouterr().out
+
+
+def test_kapiyi_gecen_varken_eleme_sayisi_basiliyor(yol: Path, aday, monkeypatch, capsys):
+    """Dolu günde de raporlanıyor: eşikleri revize edecek tek şey bu sayı."""
+    monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
+    _dil_kur(aday, yol, "pazar", izlenme=400_000, okunma=4_000)
+    aday("YILDIZ", "pazar_yildiz", dil="pazar", okunma=8_000)
+    _olcum_yaz(yol, "YILDIZ", "pazar", izlenme=35_000)
+
+    assert cli.main(["trend", "aktar", "--kuru"]) == 0
+    cikti = capsys.readouterr().out
+    assert "Kapılar 6 adayı eledi" in cikti
+    assert "pazar_yildiz".replace("_", " ") in cikti
+
+
+def test_gonderilmis_aday_kapi_elemesi_gibi_raporlanmaz(yol: Path, aday, monkeypatch, capsys):
+    """ "Aday yok"un iki sebebi var ve karıştırmak operatörü yanlış yere gönderir.
+
+    Canlı veride yakalandı: 73 adayın 9'u kapıyı geçiyordu ama dokuzu da daha
+    önce Notion'a yazılmıştı. Rapor "hiçbiri kapıları geçmedi" diyordu — kapı
+    çalışmıyor sanılırdı; oysa yapılacak şey yeni ölçüm almaktı.
+    """
+    monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
+    _dil_kur(aday, yol, "pazar", izlenme=400_000, okunma=4_000)
+    aday("YILDIZ", "pazar_yildiz", dil="pazar", okunma=8_000)
+    _olcum_yaz(yol, "YILDIZ", "pazar", izlenme=35_000)
+
+    # Yıldız kapıyı geçiyor; "gönderilmiş" defterine elle yazılıyor.
+    with depo.yazma_islemi(yol) as baglanti:
+        baglanti.execute(
+            "INSERT INTO aktarim (video_id, hedef, an) VALUES ('wiki:YILDIZ:pazar', 'notion', ?)",
+            (SIMDI.isoformat(),),
+        )
+
+    kod = cli.main(["trend", "aktar", "--kuru"])
+    cikti = capsys.readouterr().out
+
+    assert kod == 1, "yeni ölçüm gerekiyor — bilerek boş geçilen bir gün değil"
+    assert "kapıları geçmedi" not in cikti, "kapı elemesiyle karıştırılmamalı"
+    assert "--zorla" in cikti

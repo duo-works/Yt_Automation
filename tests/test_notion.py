@@ -353,10 +353,36 @@ def wiki_aday(yol: Path):
     return kur
 
 
+@pytest.fixture
+def pazar(wiki_aday):
+    """Bir dilin tabanını kuran sıradan adaylar — kapının çalışması için şart.
+
+    DW-51'den sonra `aktarilmamis_bosluklar` iki kapı uyguluyor ve göreli olan
+    dilin **kendi dağılımını** istiyor. Tek aday yazan bir kurulum artık
+    "taban güvenilmez" diye elenir; testin ölçmek istediği şey buysa değil.
+    """
+
+    def kur(dil: str = "en", *, izlenme: int = 400_000, okunma: int = 4_000, adet: int = 6):
+        for i in range(adet):
+            # İzlenme katlanarak artıyor: skor log ölçekte, sabit ekleme
+            # sıfıra yakın bir MAD üretir ve her sapma devasa z verir.
+            wiki_aday(
+                f"TABAN{i}",
+                f"{dil}_sirade_{i}",
+                dil=dil,
+                okunma=okunma,
+                medyan_izlenme=izlenme * 2**i,
+            )
+
+    return kur
+
+
 def test_bosluk_skoruna_gore_siralanir(yol: Path, wiki_aday):
+    """Sıralama testi kapıyı bilerek atlıyor (`zorla`): ölçtüğü şey sıra."""
     wiki_aday("Q1", "Doymus", medyan_izlenme=2_000_000)
     wiki_aday("Q2", "Bos", medyan_izlenme=800)
-    assert [k.baslik for k in notion.aktarilmamis_bosluklar(yol)] == ["Bos", "Doymus"]
+    kayitlar = notion.aktarilmamis_bosluklar(yol, zorla=True)
+    assert [k.baslik for k in kayitlar] == ["Bos", "Doymus"]
 
 
 def test_wiki_ozellikleri_semaya_uyuyor(yol: Path, wiki_aday, monkeypatch):
@@ -365,7 +391,8 @@ def test_wiki_ozellikleri_semaya_uyuyor(yol: Path, wiki_aday, monkeypatch):
     monkeypatch.setattr(notion, "_istek", sahte)
     notion.bosluklari_aktar(
         yol,
-        adaylar=notion.aktarilmamis_bosluklar(yol),
+        # Ölçtüğü şey Notion yükünün şekli, kapı değil.
+        adaylar=notion.aktarilmamis_bosluklar(yol, zorla=True),
         database="db",
         token="t",
         an=SIMDI,
@@ -384,14 +411,15 @@ def test_wiki_ozellikleri_semaya_uyuyor(yol: Path, wiki_aday, monkeypatch):
 def test_wiki_govdesi_kaynak_dosyasini_tasiyor(yol: Path, wiki_aday):
     """Kabul ölçütü: Ömer içerik üretimine başlayabilecek kadar bağlam buluyor."""
     wiki_aday("Q1", "Cleopatra", dosya=True)
-    kayit = notion.aktarilmamis_bosluklar(yol)[0]
+    kayit = notion.aktarilmamis_bosluklar(yol, zorla=True)[0]
     metin = govde_yazisi(notion.bosluk_govdesi(kayit, kaynak.dosyayi_oku(yol, "Q1")))
 
     assert "TALEP" in metin and "ARZ" in metin and "BOŞLUK SKORU" in metin
     assert "doğum tarihi: MÖ 69" in metin
     assert "britishmuseum" in metin
     assert "Public domain" in metin, "görselin lisansı olmadan kullanılamaz"
-    assert "SIRALAMADIR, eşik değildir" in metin, "kalibrasyon uyarısı taşınmalı"
+    assert "PAZAR BÜYÜKLÜĞÜNÜ" in metin, "diller arası kıyas uyarısı taşınmalı"
+    assert "YAYIN SONUÇLARINDAN DEĞİL" in metin, "eşiklerin geçiciliği taşınmalı"
     assert "**" not in metin and "`" not in metin, (
         "Notion markdown yorumlamıyor — işaretler ekranda literal görünür"
     )
@@ -408,13 +436,14 @@ def test_kaynaksiz_aday_acikca_uyariyor(yol: Path, wiki_aday):
     assert dosya, "sözlük boş değil, listeleri boş"
     assert notion.dosya_dolu(dosya) is False
 
-    kayit = notion.aktarilmamis_bosluklar(yol)[0]
+    kayit = notion.aktarilmamis_bosluklar(yol, zorla=True)[0]
     metin = govde_yazisi(notion.bosluk_govdesi(kayit, dosya))
     assert "videoya dönüşmemeli" in metin
 
 
-def test_wiki_adayi_ikinci_kez_gonderilmez(yol: Path, wiki_aday, monkeypatch):
-    wiki_aday("Q1", "Cleopatra")
+def test_wiki_adayi_ikinci_kez_gonderilmez(yol: Path, wiki_aday, pazar, monkeypatch):
+    pazar()
+    wiki_aday("Q1", "Cleopatra", okunma=8_000, medyan_izlenme=35_000)
     sahte = SahteNotion()
     monkeypatch.setattr(notion, "_istek", sahte)
 
@@ -441,10 +470,11 @@ def test_wiki_ve_video_defterleri_carpismaz(yol: Path, wiki_aday, olcum, monkeyp
     assert notion.aktarilmamis_adaylar(yol) == []
 
 
-def test_cli_varsayilan_kaynak_wikipedia(yol: Path, wiki_aday, olcum, monkeypatch, capsys):
+def test_cli_varsayilan_kaynak_wikipedia(yol: Path, wiki_aday, pazar, olcum, monkeypatch, capsys):
     """Çartta tarih/bilim olmadığı ölçüldü; varsayılan yol Wikipedia olmalı."""
     monkeypatch.setattr(depo, "varsayilan_yol", lambda: yol)
-    wiki_aday("Q1", "Cleopatra")
+    pazar()
+    wiki_aday("Q1", "Cleopatra", okunma=8_000, medyan_izlenme=35_000)
     olcum("v1")
 
     assert cli.main(["trend", "aktar", "--kuru"]) == 0
