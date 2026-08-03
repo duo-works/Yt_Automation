@@ -118,3 +118,28 @@ adayı, büyük pazarın vasatına artık yenilmiyor.
 %34'ü (73 adayın 25'i) `ar` + `hi` dillerine gidiyor ve iki dil de yapısal
 olarak kazanamıyor. Bu bir eşik sorusu değil kapsam sorusu: "Almanca'da yükselen
 konu Türkçe yapılmaya değer mi?" cevabına bağlı. Ayrı karar.
+→ **Kapandı: DW-53.** Sondaj hedef pazarlara (en+es) çevrildi, radar korundu,
+başka dilde yükselen konu QID köprüsüyle hedef pazarda ölçülüyor.
+
+## Güncelleme — kalibre kapısı format başına çalışıyor (DW-58, 2026-08-03)
+
+Yukarıdaki göreli kapı **birleşik** arz üzerinden kuruluydu; DW-52 arzı Shorts
+ve uzun olarak ayırınca bu bir kaçırma kaynağına dönüştü: uzun tarafı doymuş
+ama Shorts tarafı bomboş bir konu, iki raf tek potada eritildiği için "orta
+arz" görünüp eleniyordu. Yanlış atama değil — konu öneri aşamasına bile
+varamıyordu.
+
+Kapı artık format başına ölçüyor ve **en az bir format** eşiği geçiyorsa aday
+geçiyor. Kritik ayrıntı: her formatın taban çizgisi **ayrı** tutuluyor. Sebebi
+bu ADR'nin kendi gerekçesinin tekrarı — Shorts sistematik olarak uzun videodan
+çok daha fazla izlenme alıyor, yani iki format aynı potaya konsaydı Shorts
+tarafı topluca "kötü" görünür ve kapı neredeyse hep uzunu seçerdi. Dil
+yanlılığı için verilen kararın birebir aynısı, bir eksen aşağıda.
+
+Kabul edilen yeni kısıt: örneklem artık **dil × format** olarak bölünüyor, yani
+`ASGARI_TABAN_ORNEK` daha geç doluyor. Dolmadığı sürece format kalibresi
+üretilmiyor ve karar birleşik skora düşüyor — kaba ama doğru; yetersiz
+örneklemden format skoru uydurmak yanlış olurdu.
+
+Talep kapısı (`ASGARI_TALEP`) **formata bölünmedi** ve bölünemez: Wikipedia
+okunması konu seviyesinde, "kaçı 60 saniyelik ister" bilgisini taşımıyor.

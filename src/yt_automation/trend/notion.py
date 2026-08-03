@@ -334,6 +334,17 @@ def bosluk_ozellikleri(
                 "name": {"shorts": "Shorts", "uzun": "Uzun"}.get(kayit.onerilen_format, "Belirsiz")
             }
         },
+        # Hedef kanal yalnızca kapıyı **geçen** formattan yazılıyor (DW-58).
+        # `Önerilen format` sıralama bilgisi de taşıyabiliyor (kapıyı hiçbiri
+        # geçmese bile en iyisini gösteriyor); kanal ataması ise bir karar ve
+        # eşiği geçmemiş bir formatı kanala yazmak o kararı uydurmak olurdu.
+        "Hedef kanal": {
+            "select": (
+                {"name": {"shorts": "Shorts kanal", "uzun": "Uzun kanal"}[gecen[0]]}
+                if (gecen := kayit.gecen_formatlar)
+                else None
+            )
+        },
         "Kaynak sayısı": _sayi(kaynak_sayisi),
         "Tespit tarihi": {"date": {"start": gun}},
         "Durum": {"select": {"name": durum}},
