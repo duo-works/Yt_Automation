@@ -30,7 +30,21 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 # 4 → arz sondajı: talep-arz boşluğu ölçümü (DW-35)
 # 5 → niş kanal izleme: kanal kataloğu + kanal bazlı ölçüm (DW-36)
 # 6 → Notion aktarım defteri (DW-31)
-SEMA_SURUMU = 6
+# 7 → arz'a Shorts/uzun format kırılımı (DW-52)
+SEMA_SURUMU = 7
+
+# Var olan tabloya kolon ekleyen geçişler. `CREATE TABLE IF NOT EXISTS` yeni
+# kolonu **eklemez**; sıfırdan kurulan veritabanı ise kolonları SEMA'dan zaten
+# alır. Bu yüzden geçişler yalnızca `0 < eski_sürüm < hedef` iken koşuyor —
+# sıfır "hiç kurulmamış" demek, geçilecek bir şey yok.
+GECISLER: dict[int, tuple[str, ...]] = {
+    7: (
+        "ALTER TABLE arz ADD COLUMN alakali_shorts INTEGER",
+        "ALTER TABLE arz ADD COLUMN medyan_izlenme_shorts INTEGER",
+        "ALTER TABLE arz ADD COLUMN alakali_uzun INTEGER",
+        "ALTER TABLE arz ADD COLUMN medyan_izlenme_uzun INTEGER",
+    ),
+}
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -163,6 +177,12 @@ CREATE TABLE IF NOT EXISTS arz (
     medyan_yas_gun INTEGER,
     medyan_abone   INTEGER,
     harcanan       INTEGER NOT NULL,  -- bu sondajın gerçek kota maliyeti
+    -- Format kırılımı (DW-52). NULL = kırılım ölçülmedi (eski sondaj), sıfır
+    -- değil — "bilinmiyor ≠ sıfır" ayrımı buraya da uygulanıyor.
+    alakali_shorts        INTEGER,  -- alakalı sonuçların ≤ 180 sn olanları
+    medyan_izlenme_shorts INTEGER,
+    alakali_uzun          INTEGER,
+    medyan_izlenme_uzun   INTEGER,
     PRIMARY KEY (qid, dil, an)
 );
 
@@ -272,8 +292,20 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # Aynı gerekçe şema için: `CREATE TABLE IF NOT EXISTS` var olan tabloda
     # işe yaramıyor ama yine de yazma kilidi alıyor. `user_version` ucuz bir
     # okuma; şema yalnızca gerçekten eksikse kuruluyor.
-    if baglanti.execute("PRAGMA user_version").fetchone()[0] < SEMA_SURUMU:
+    eski_surum = baglanti.execute("PRAGMA user_version").fetchone()[0]
+    if eski_surum < SEMA_SURUMU:
         baglanti.executescript(SEMA)
+        if eski_surum:
+            # Sıfırdan kurulumda kolonlar SEMA'dan geldi; ALTER bir daha
+            # eklemeye kalkar ve "duplicate column" ile düşerdi.
+            for surum, ifadeler in sorted(GECISLER.items()):
+                if eski_surum < surum:
+                    for ifade in ifadeler:
+                        # İki süreç geçişi aynı anda deneyebilir; WAL
+                        # geçişiyle aynı çerçeve — yarışı kaybetmek zararsız,
+                        # kolon zaten eklenmiş demektir.
+                        with suppress(sqlite3.OperationalError):
+                            baglanti.execute(ifade)
         baglanti.execute(f"PRAGMA user_version = {SEMA_SURUMU}")
     return baglanti
 

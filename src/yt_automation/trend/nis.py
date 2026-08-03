@@ -41,7 +41,7 @@ from pathlib import Path
 from statistics import median
 
 from .. import depo, kota
-from . import hiz
+from . import hiz, toplayici
 
 LISTE = "playlistItems.list"
 ISTATISTIK = "videos.list"
@@ -357,11 +357,12 @@ def _videoyu_yaz(baglanti, video: dict, kanal_id: str, damga: str) -> None:
     baglanti.execute(
         """
         INSERT INTO video (video_id, baslik, kanal_id, kanal_adi, yayin_zamani,
-                           kategori_id, ilk_gorulme)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+                           kategori_id, sure_sn, ilk_gorulme)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(video_id) DO UPDATE SET
             baslik    = excluded.baslik,
-            kanal_adi = excluded.kanal_adi
+            kanal_adi = excluded.kanal_adi,
+            sure_sn   = COALESCE(excluded.sure_sn, video.sure_sn)
         """,
         (
             video["id"],
@@ -370,6 +371,10 @@ def _videoyu_yaz(baglanti, video: dict, kanal_id: str, damga: str) -> None:
             snippet.get("channelTitle"),
             snippet.get("publishedAt"),
             _tam_sayi(snippet.get("categoryId")),
+            # contentDetails zaten part'ta istenmişti ama süre yazılmıyordu
+            # (DW-52'de bulunan tuzak): niş yoluyla giren video kalıcı NULL
+            # kalıyor ve Shorts/uzun kırılımının dışında görünmez oluyordu.
+            toplayici.sure_saniye((video.get("contentDetails") or {}).get("duration")),
             damga,
         ),
     )

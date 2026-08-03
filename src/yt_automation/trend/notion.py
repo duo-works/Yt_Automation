@@ -324,6 +324,14 @@ def bosluk_ozellikleri(kayit: bosluk.Bosluk, *, gun: str, kaynak_sayisi: int | N
         "Talep (okunma)": _sayi(kayit.talep),
         "Boşluk skoru": _sayi(kayit.skor),
         "Arz": _metin(kayit.olcum.ozet()),
+        # "Belirsiz" iki durumu birden taşıyor: kırılım ölçülmedi ya da iki
+        # format ayırt edilemeyecek kadar yakın. İkisinde de karar insanda —
+        # ayrım gövdedeki arz özetinden okunuyor.
+        "Önerilen format": {
+            "select": {
+                "name": {"shorts": "Shorts", "uzun": "Uzun"}.get(kayit.onerilen_format, "Belirsiz")
+            }
+        },
         "Kaynak sayısı": _sayi(kaynak_sayisi),
         "Tespit tarihi": {"date": {"start": gun}},
         "Durum": {"select": {"name": "Yeni"}},
