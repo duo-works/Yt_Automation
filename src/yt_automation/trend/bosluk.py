@@ -571,6 +571,7 @@ def sondajlanmamis_adaylar(
     *,
     pazarlar: tuple[str, ...] | None = None,
     sitelink_getir=None,
+    oncelikli_qidler: set[str] | None = None,
 ) -> list[dict]:
     """Tarih/bilim sınıfında, hedef pazarlarda henüz sondalanmamış adaylar.
 
@@ -626,6 +627,13 @@ def sondajlanmamis_adaylar(
         }
     finally:
         baglanti.close()
+
+    # Sıçrama önceliği (DW-54): patlayan konu kuyruğun başına geçer. Sıralama
+    # kararlı — öncelikliler kendi içinde yine okunmaya göre dizili kalır.
+    # Kuyruk bütçeden uzunsa sıradan aday yarın da sorulabilir; sıçramanın
+    # yarını yok, ertelemek detektörü anlamsızlaştırır.
+    if oncelikli_qidler:
+        yukselenler.sort(key=lambda a: a["qid"] not in oncelikli_qidler)
 
     # Köprü gerektirenlerin sitelinkleri tek toplu çağrıyla çözülür — döngü
     # içinde çağrı yapmak Wikidata'ya aday başına istek atmak olurdu.
@@ -691,6 +699,7 @@ def arastir(
     limit: int = 10,
     tavan: int = SONDAJ_KOTA_TAVANI,
     an: datetime | None = None,
+    oncelikli_qidler: set[str] | None = None,
 ) -> ArastirmaSonucu:
     """Sondajlanmamış adayları sırayla sondalar ve ölçümleri yazar.
 
@@ -700,7 +709,7 @@ def arastir(
     sonuc = ArastirmaSonucu()
     rezerve = kota.video_basina_maliyet()
 
-    for aday in sondajlanmamis_adaylar(yol, limit):
+    for aday in sondajlanmamis_adaylar(yol, limit, oncelikli_qidler=oncelikli_qidler):
         if sayac.surec_harcamasi + SONDAJ_MALIYETI > tavan:
             sonuc.kota_bitti = True
             break

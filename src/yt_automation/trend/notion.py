@@ -311,7 +311,9 @@ def _bosluk_anahtari(kayit: bosluk.Bosluk) -> str:
     return f"wiki:{kayit.qid}:{kayit.dil}"
 
 
-def bosluk_ozellikleri(kayit: bosluk.Bosluk, *, gun: str, kaynak_sayisi: int | None) -> dict:
+def bosluk_ozellikleri(
+    kayit: bosluk.Bosluk, *, gun: str, kaynak_sayisi: int | None, durum: str = "Yeni"
+) -> dict:
     baslik = kayit.baslik.replace("_", " ")
     return {
         "Başlık": {"title": [{"text": {"content": baslik[:BASLIK_SINIRI]}}]},
@@ -334,7 +336,7 @@ def bosluk_ozellikleri(kayit: bosluk.Bosluk, *, gun: str, kaynak_sayisi: int | N
         },
         "Kaynak sayısı": _sayi(kaynak_sayisi),
         "Tespit tarihi": {"date": {"start": gun}},
-        "Durum": {"select": {"name": "Yeni"}},
+        "Durum": {"select": {"name": durum}},
     }
 
 
@@ -466,11 +468,17 @@ def bosluklari_aktar(
     database: str,
     token: str,
     an: datetime | None = None,
+    acil_qidler: set[str] | None = None,
 ) -> AktarimSonucu:
-    """Wikipedia adaylarını kaynak dosyalarıyla birlikte Notion'a yazar."""
+    """Wikipedia adaylarını kaynak dosyalarıyla birlikte Notion'a yazar.
+
+    `acil_qidler` (DW-54): sıçrama detektörünün işaretledikleri `🔥 Acil`
+    durumuyla düşer — Notion bildirim aboneliği o durumu telefona taşır.
+    """
     an = an or datetime.now(UTC)
     sonuc = AktarimSonucu()
     gun = an.date().isoformat()
+    acil_qidler = acil_qidler or set()
 
     for kayit in adaylar:
         dosya = kaynak.dosyayi_oku(yol, kayit.qid)
@@ -480,7 +488,12 @@ def bosluklari_aktar(
                 "/pages",
                 {
                     "parent": {"database_id": database},
-                    "properties": bosluk_ozellikleri(kayit, gun=gun, kaynak_sayisi=sayi),
+                    "properties": bosluk_ozellikleri(
+                        kayit,
+                        gun=gun,
+                        kaynak_sayisi=sayi,
+                        durum="🔥 Acil" if kayit.qid in acil_qidler else "Yeni",
+                    ),
                     "children": bosluk_govdesi(kayit, dosya),
                 },
                 token,
