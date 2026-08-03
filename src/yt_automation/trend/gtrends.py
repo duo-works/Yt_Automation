@@ -212,21 +212,25 @@ def isle(
     pazarlar: tuple[str, ...] | None = None,
     terim_getir=None,
     makale_bul=None,
+    geo_kodlari: dict[str, tuple[str, ...]] | None = None,
 ) -> IslemeSonucu:
-    """RSS terimlerini toplar, eşleşenleri boruya yazar.
+    """Trend terimlerini toplar, eşleşenleri boruya yazar.
 
     Bir coğrafyanın/terimin hatası diğerlerini düşürmez — huninin her
     katmanındaki kararın aynısı (DW-28'den beri).
 
-    `terim_getir` / `makale_bul` testler için enjekte edilebilir.
+    `terim_getir` / `makale_bul` / `geo_kodlari` takılabilir: ADR-0010'un
+    deseni gereği başka bir trend kaynağı (TikTok) aynı boruyu, kendi terim
+    getiricisiyle yeniden kullanıyor — yazma ve sınıflandırma kodu tek yerde.
     """
     pazarlar = pazarlar or bosluk.hedef_pazarlar()
     terim_getir = terim_getir or terimleri_cek
     makale_bul = makale_bul or makale_ara
+    geo_kodlari = geo_kodlari or GEO_KODLARI
     sonuc = IslemeSonucu()
 
     for dil in pazarlar:
-        for geo in GEO_KODLARI.get(dil, ()):
+        for geo in geo_kodlari.get(dil, ()):
             try:
                 terimler = terim_getir(geo)
             except Exception as hata:  # noqa: BLE001 — bir coğrafya diğerini düşürmesin
