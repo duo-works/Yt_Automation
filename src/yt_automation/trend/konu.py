@@ -223,6 +223,34 @@ def tipleri_getir(kimlikler: list[str]) -> dict[str, list[str]]:
     return {q: v["tipler"] for q, v in varliklari_getir(kimlikler).items()}
 
 
+def sitelinkleri_getir(kimlikler: list[str], diller: tuple[str, ...]) -> dict[str, dict[str, str]]:
+    """Wikidata kimliği → {dil: o dildeki makale başlığı}. Ücretsiz, toplu.
+
+    QID köprüsünün (DW-53) tek ağ çağrısı: başka bir dilde yükselen konunun
+    hedef pazardaki başlığı buradan geliyor. `sitefilter` yalnızca istenen
+    vikileri getirtiyor — 300 dilin sitelink'ini taşımanın anlamı yok.
+
+    Başlıklar alt çizgili döner: depo (`makale.baslik`) ve sondaj sorgusu
+    (`sorguya_cevir`) o biçimi bekliyor; sitelinks API'si boşluklu veriyor.
+    """
+    filtre = "|".join(f"{d}wiki" for d in diller)
+    sonuc: dict[str, dict[str, str]] = {}
+    for grup in _gruplar(kimlikler):
+        url = (
+            f"{WIKIDATA_API}?action=wbgetentities&ids={'|'.join(grup)}"
+            f"&props=sitelinks&sitefilter={filtre}&format=json"
+        )
+        for qid, varlik in _cek(url).get("entities", {}).items():
+            baslikler = {
+                anahtar.removesuffix("wiki"): kayit["title"].replace(" ", "_")
+                for anahtar, kayit in (varlik.get("sitelinks") or {}).items()
+                if kayit.get("title")
+            }
+            if baslikler:
+                sonuc[qid] = baslikler
+    return sonuc
+
+
 def _kisiyi_siniflandir(varlik: dict) -> str:
     """Kişiyi mesleğine ve ölüm tarihine göre ayırır.
 
