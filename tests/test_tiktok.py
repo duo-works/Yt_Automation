@@ -79,6 +79,13 @@ def test_cli_tiktok_yapilandirilmamisken_bildirir(yol: Path, monkeypatch, capsys
 
 
 def test_kisitlar_belgeleniyor():
-    """Ölçüm modülde yazılı kalmalı: sonraki kişi aynı ucu yeniden denemesin."""
+    """Ölçüm modülde yazılı kalmalı: sonraki kişi aynı ucu yeniden denemesin.
+
+    Research API satırı özellikle kilitli: ADR'nin ilk hâli onu erişilebilir
+    bir seçenek gibi listeliyordu. Uygunluk iki bağımsız engelle kapalı
+    (ticari kuruluş + Türkiye desteklenmiyor) ve bu ölçüm kaybolmamalı.
+    """
     assert "40101" in tiktok.__doc__
     assert "Research API" in tiktok.__doc__
+    assert "bize kapalı" in tiktok.__doc__
+    assert "Türkiye" in tiktok.__doc__

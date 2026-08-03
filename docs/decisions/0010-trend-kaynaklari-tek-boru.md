@@ -72,9 +72,18 @@ yolların tamamı 2026-08-03'te denendi ve kapalı:
 | `creative_radar_api/.../hashtag/list` | HTTP 200, gövde `{"code":40101,"msg":"no permission"}` — tarayıcı UA ve Referer ile de aynı |
 | Creative Center HTML | 21 KB boş SPA kabuğu; veri istemci tarafında yetkili API'den geliyor |
 
-Çalıştırma yolları — üçü de bu görevin dışında karar gerektiriyor: headless
-tarayıcı (ağır, TikTok'un JS imzasına bağımlı), Research API (resmî, ücretsiz,
-**başvuru onayı** gerekiyor), üçüncü parti API (çalışıyor, ücretli).
+Çalıştırma yolları ve **uygunluk denetimi** (2026-08-03, resmî dokümandan):
+
+| Yol | Durum |
+|---|---|
+| Research API | ❌ **Bize kapalı.** İki bağımsız engel: (1) uygunluk "ticari çıkarlardan bağımsız, kâr amacı gütmeyen" kuruluşlarla sınırlı — `duo-works` ticari; (2) desteklenen bölgeler ABD, AEA, BK, İsviçre, Brezilya — **Türkiye listede yok**. Başvuru yapılmadı; yapılsaydı reddedilirdi. |
+| Headless tarayıcı | Teknik olarak mümkün, ağır bağımlılık ve TikTok'un JS imzasına bağımlı |
+| Üçüncü parti API | Çalışıyor, ücretli (~$29–100/ay bandı) |
+
+⚠️ Bu tablonun ilk satırı **düzeltmedir**: ADR'nin ilk hâli Research API'yi
+"resmî, ücretsiz, başvuru onayı gerekiyor" diye listeliyordu, yani erişilebilir
+bir seçenek gibi. Uygunluk koşulları okunmadan yazılmıştı. Ölçüm yapılınca iki
+engel de kesin çıktı.
 
 **Kırılgan bir kazıyıcı yazmamak bilinçli.** Çalışmayan kaynak, çalıştığı
 sanılan kaynaktan iyidir: ikincisi sessizce boş döner ve "TikTok'a da
@@ -84,6 +93,10 @@ yaşandı (dal filtresi, CI tetikleyici, sınıflandırıcı alt çizgisi).
 Bugün çalışan yol: `YT_TIKTOK_DOSYA` ile **elle besleme**. Creative Center'ı
 tarayıcıda açıp hashtag'leri dosyaya yapıştırmak 30 saniye ve sinyal gerçek.
 Otomatik kaynak geldiğinde `terim_getir` yerine geçiyor, boru değişmiyor.
+
+Research API kapalı olduğu için otomatikleşme **ücretli bir karara** bağlı;
+karar DW-57'de, elle besleme o karara kadar (ve karar "hayır" olursa kalıcı
+olarak) tek yol.
 
 ## Sonuçlar
 

@@ -14,12 +14,14 @@ tutuldu (karar: Mirza, 2026-08-03).
         → 21 KB'lık **boş SPA kabuğu**; veri yok, istemci tarafında
           yukarıdaki yetkili API'den çekiliyor.
 
-Yani anonim kazıma çalışmıyor. Çalıştırmanın üç yolu var, üçü de bu görevin
-dışında bir karar gerektiriyor:
+Yani anonim kazıma çalışmıyor. Kalan yollar:
 
-    1. Headless tarayıcı — ağır bağımlılık, TikTok'un JS imzasına bağımlı,
+    1. TikTok Research API — ❌ **bize kapalı.** Uygunluk "ticari çıkarlardan
+       bağımsız, kâr amacı gütmeyen" kuruluşlarla sınırlı ve desteklenen
+       bölgeler ABD/AEA/BK/İsviçre/Brezilya. `duo-works` ticari ve Türkiye
+       listede yok — iki bağımsız engel, başvuru yapılmadı (DW-57).
+    2. Headless tarayıcı — ağır bağımlılık, TikTok'un JS imzasına bağımlı,
        her sürümde kırılabilir.
-    2. TikTok Research API — resmî ve ücretsiz ama başvuru onayı gerekiyor.
     3. Üçüncü parti API (Apify, EnsembleData…) — çalışıyor, ücretli.
 
 **Kırılgan bir kazıyıcı yazmamak bilinçli bir karar.** Çalışmayan bir kaynak,
