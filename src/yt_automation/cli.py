@@ -254,10 +254,13 @@ def _bosluk_rapor(*, limit: int) -> int:
         print(f"{isaret}{satir}")
     print(
         f"\nℹ️ Kapılar: kalibre skor ≥ {bosluk.ESIK_KALIBRE:.1f} MAD **ve** talep ≥ "
-        f"{bosluk.ASGARI_TALEP:,} okunma/gün. Ham skorun mutlak seviyesi fırsatı değil "
-        "pazar büyüklüğünü kodluyor, o yüzden sıralama dile göre normalize ediliyor. "
-        "Eşikler gözlenen dağılımdan seçildi, yayın sonuçlarından değil — tek video "
-        "yayınlanınca revize edilmeli.",
+        f"{bosluk.ASGARI_TALEP:,} okunma/gün. Kalibre kapısı **format başına** "
+        "işliyor: Shorts ve uzun ayrı ayrı, her biri kendi taban çizgisine göre "
+        "ölçülüyor ve en az biri eşiği geçerse aday geçiyor. Ham skorun mutlak "
+        "seviyesi fırsatı değil pazar büyüklüğünü kodluyor — hem diller hem "
+        "formatlar arası kıyas bu yüzden normalize ediliyor. Format tabanı için "
+        "örneklem yetmezse birleşik skora düşülüyor. Eşikler gözlenen dağılımdan "
+        "seçildi, yayın sonuçlarından değil — tek video yayınlanınca revize edilmeli.",
         file=sys.stderr,
     )
     return 0

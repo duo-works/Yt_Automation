@@ -382,13 +382,38 @@ def bosluk_govdesi(kayit: bosluk.Bosluk, dosya: dict | None) -> list[dict]:
         f"TALEP — {kayit.talep:,} günlük okunma",
         f"ARZ — {kayit.olcum.ozet()}",
         f"BOŞLUK SKORU — {kalibre} (ham {skor})",
-        f"Bu aday {kayit.dil} pazarının olağanından {kalibre} daha iyi. Ham skorun "
-        "mutlak seviyesi fırsatı değil PAZAR BÜYÜKLÜĞÜNÜ kodluyor, o yüzden diller "
-        "arası karşılaştırma kalibre değer üzerinden yapılır.",
+    ]
+
+    # ⚠️ Kapı DW-58'den beri format başına çalışıyor, yani aday **birleşik**
+    # kalibresi eşiğin altındayken de geçmiş olabilir — tek bir formatta
+    # parlıyorsa. Yalnızca birleşik değeri göstermek operatöre eşiğin altında
+    # bir sayı gösterip "bu aday neden burada?" dedirtirdi. Geçen format ve
+    # onun kendi kalibresi bu yüzden ayrıca yazılıyor.
+    if kalibreler := kayit.format_kalibreleri:
+        ayrinti = " · ".join(
+            f"{'Shorts' if ad == 'shorts' else 'Uzun'} {deger:+.2f} MAD"
+            for ad, deger in sorted(kalibreler.items())
+        )
+        satirlar.append(f"FORMAT BAŞINA — {ayrinti}")
+        if gecen := kayit.gecen_formatlar:
+            adlar = ", ".join("Shorts" if a == "shorts" else "Uzun" for a in gecen)
+            satirlar.append(
+                f"Bu aday {adlar} formatında eşiği geçti. Her format kendi taban "
+                "çizgisine göre ölçülüyor: Shorts sistematik olarak uzun videodan "
+                "daha çok izlenme aldığı için ikisi aynı potada kıyaslanmıyor."
+            )
+    else:
+        satirlar.append(
+            f"Bu aday {kayit.dil} pazarının olağanından {kalibre} daha iyi. Ham skorun "
+            "mutlak seviyesi fırsatı değil PAZAR BÜYÜKLÜĞÜNÜ kodluyor, o yüzden diller "
+            "arası karşılaştırma kalibre değer üzerinden yapılır."
+        )
+
+    satirlar.append(
         f"⚠️ Eşikler ({bosluk.ESIK_KALIBRE:.1f} MAD ve {bosluk.ASGARI_TALEP:,} okunma/gün) "
         "gözlenen dağılımdan seçildi, YAYIN SONUÇLARINDAN DEĞİL — henüz tek video "
-        "yayınlanmadı. İlk sonuçlar gelince revize edilmeli.",
-    ]
+        "yayınlanmadı. İlk sonuçlar gelince revize edilmeli."
+    )
 
     if dosya_dolu(dosya):
         satirlar.append(

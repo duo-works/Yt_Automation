@@ -488,3 +488,51 @@ def test_cli_cart_kaynagi_secilebilir(yol: Path, olcum, monkeypatch, capsys):
     olcum("v1")
     assert cli.main(["trend", "aktar", "--kuru", "--kaynak", "youtube-chart"]) == 0
     assert "kaynak: youtube-chart" in capsys.readouterr().out
+
+
+def test_govde_gecen_formati_ve_kendi_kalibresini_gosterir(yol: Path, wiki_aday, pazar):
+    """Kapı format başına çalışıyor (DW-58): aday BİRLEŞİK kalibresi eşiğin
+    altındayken de geçmiş olabilir — tek formatta parlıyorsa.
+
+    Yalnızca birleşik değeri göstermek operatöre eşiğin altında bir sayı
+    gösterip "bu aday neden burada?" dedirtirdi. Bu test o sapmayı kilitliyor.
+    """
+    from yt_automation.trend import bosluk
+
+    # Format tabanı: her iki rafta da orta yoğun altı aday.
+    for i in range(6):
+        wiki_aday(f"T{i}", f"taban_{i}", okunma=40_000)
+        _kirilim_yaz(yol, f"T{i}", shorts_izlenme=200_000 * 2**i, uzun_izlenme=100_000 * 2**i)
+    wiki_aday("FIRSAT", "Shortsta_Bos", okunma=9_000)
+    _kirilim_yaz(yol, "FIRSAT", shorts_izlenme=400, shorts_alakali=2, uzun_izlenme=900_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "FIRSAT")
+    metin = govde_yazisi(notion.bosluk_govdesi(kayit, kaynak.dosyayi_oku(yol, "FIRSAT")))
+
+    assert "FORMAT BAŞINA" in metin
+    assert "Shorts formatında eşiği geçti" in metin
+    assert "kendi taban çizgisine" in metin
+
+
+def _kirilim_yaz(yol: Path, qid: str, *, shorts_izlenme, uzun_izlenme, shorts_alakali=20):
+    from yt_automation.trend import bosluk
+
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid=qid,
+            dil="en",
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=50,
+            alakali=shorts_alakali + 20,
+            medyan_izlenme=(shorts_izlenme + uzun_izlenme) // 2,
+            medyan_yas_gun=300,
+            medyan_abone=5_000,
+            harcanan=102,
+            alakali_shorts=shorts_alakali,
+            medyan_izlenme_shorts=shorts_izlenme,
+            alakali_uzun=20,
+            medyan_izlenme_uzun=uzun_izlenme,
+        ),
+    )
