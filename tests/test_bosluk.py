@@ -1015,6 +1015,52 @@ def test_format_farki_kucukse_oneri_yok():
     assert bosluk.onerilen_format(dengeli) is None
 
 
+def test_gozlemsiz_format_skorlanmaz():
+    """Sıfır gözlem boş raf değil, ölçülmemiş raf — skor üretilmemeli.
+
+    Gerçek vaka (2026-08-04, `Lise Lesèvre`): 50 sonuçtan 2'si alakalı, hiçbiri
+    Shorts değil. Eşiksiz hâlde arz terimleri sıfırdan kuruluyor, skor zirveye
+    çıkıyor ve konu **hiç Shorts görülmediği için** kapıyı geçiyordu.
+    """
+    cilizca = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=2,
+        alakali_shorts=0,
+        medyan_izlenme_shorts=None,
+        alakali_uzun=2,
+        medyan_izlenme_uzun=3_718,
+        medyan_yas_gun=3_552,
+    )
+    assert bosluk.bicim_skorla(cilizca, 13_959, "shorts") is None
+    # Gözlemi olan taraf skorlanmaya devam ediyor: eşik ölçümü değil,
+    # ölçümsüzlüğü eliyor.
+    assert bosluk.bicim_skorla(cilizca, 13_959, "uzun") is not None
+    # Kıyas da yapılamaz — ölçülmemiş rafı "daha boş" ilan etmek aynı hata.
+    assert bosluk.onerilen_format(cilizca) is None
+
+
+def test_tek_gozlem_yeterli():
+    """Eşik ölçümsüzlüğü eliyor, cılız ölçümü değil — bir gözlem skorlanır."""
+    tek = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=30,
+        alakali_shorts=1,
+        medyan_izlenme_shorts=400,
+        alakali_uzun=29,
+        medyan_izlenme_uzun=800_000,
+    )
+    assert bosluk.bicim_skorla(tek, 10_000, "shorts") is not None
+    assert bosluk.onerilen_format(tek) == "shorts"
+
+
 # --- Hedef pazarlar ve QID köprüsü (DW-53) ----------------------------------
 #
 # Karar (2026-08-03): kanallar EN+ES yayınlayacak; sondaj kotası yalnızca bu

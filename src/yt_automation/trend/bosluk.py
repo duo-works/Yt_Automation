@@ -142,6 +142,28 @@ YAS_AGIRLIGI = 0.5  # eski içerik = zayıf arz, bu yüzden **çıkarılıyor**
 # demek. Altında kalan dil sıralanmıyor — ama sessizce değil, CLI sayıyı basar.
 ASGARI_TABAN_ORNEK = 5
 
+# Bir formatın skorlanabilmesi için o formatta gereken asgari **gözlem**.
+#
+# Sıfır gözlem "raf boş" DEĞİL, "bu raf ölçülmedi" demek. `bicim_skorla` arz
+# terimlerini gözlemden kuruyor; gözlem yoksa arz sıfır çıkıyor ve konu sahte
+# bir zirveye oturuyor. `ArzOlcumu.gecerli` aynı ayrımı birleşik ölçüm için
+# yapıyor — "hiç sonuç dönmedi" ≠ "hiçbiri alakalı değil" — bu onun format
+# karşılığı.
+#
+# Ölçüldü (2026-08-04, ilk canlı kırılımlı koşum): 21 sondajın 20'sinde her iki
+# formatta da gözlem vardı; tek istisna 50 sonuçtan yalnızca 2'si alakalı çıkan
+# `Lise Lesèvre` idi (0 Shorts) ve **hiç Shorts görülmediği için** kapıyı geçen
+# tek aday oydu. Eşiksiz hâl, YouTube'un zar zor indekslediği konuları
+# sistematik olarak zirveye taşıyor: arama ne kadar cılızsa bir formatın gözlemi
+# o kadar sıfıra yakın, skoru o kadar yüksek.
+#
+# ⚠️ Bu eşik ihtiyatlı yönde yanlı: gerçekten zengin bir aramada bir format
+# hiç görünmüyorsa (bol alakalı sonuç, sıfır Shorts) o da gerçek bir boşluk
+# olurdu ve şimdi birleşik skora düşüyor. Uydurulmuş fırsattan iyi. Ayrımı
+# yapabilmek için "genel alaka yüksekken sıfır gözlem" gibi ikinci bir eşik
+# gerekiyor ve onu kalibre edecek veri henüz yok.
+ASGARI_FORMAT_GOZLEM = 1
+
 # Göreli kapı: aday kendi dilinin olağanından kaç MAD daha iyi olmalı.
 #
 # Neden dile göre: skorun mutlak seviyesi fırsatı değil **pazar büyüklüğünü**
@@ -361,7 +383,9 @@ def bicim_skorla(olcum: ArzOlcumu, talep: int, bicim: str) -> float | None:
     yalnızca ikisinin de mutlak seviyesini eşit kaydırıyorlar.
 
     Kırılım ölçülmemişse `None` — eski sondajdan format skoru uydurmak,
-    olmayan bir ölçümü varmış gibi sunmak olurdu.
+    olmayan bir ölçümü varmış gibi sunmak olurdu. O formatta hiç gözlem yoksa
+    (`< ASGARI_FORMAT_GOZLEM`) da `None`: sıfır gözlem boş raf değil,
+    ölçülmemiş raf.
     """
     if not olcum.gecerli:
         return None
@@ -371,7 +395,7 @@ def bicim_skorla(olcum: ArzOlcumu, talep: int, bicim: str) -> float | None:
         alakali, izlenme = olcum.alakali_uzun, olcum.medyan_izlenme_uzun
     else:
         raise ValueError(f"bilinmeyen biçim: {bicim}")
-    if alakali is None:
+    if alakali is None or alakali < ASGARI_FORMAT_GOZLEM:
         return None
 
     talep_puani = log10(1 + max(talep, 0))
@@ -395,10 +419,17 @@ def onerilen_format(olcum: ArzOlcumu) -> str | None:
     birikmemişse (yeni pazar, yeni format kırılımı) kalibre kıyas
     yapılamıyor ve bu ham kıyas hâlâ hiç bilgi vermemekten iyi.
 
-    `None` iki durumda: kırılım hiç ölçülmedi (eski sondaj) ya da iki taraf
-    ayırt edilemeyecek kadar yakın (< 0,3 puan ≈ 2 kat fark).
+    `None` üç durumda: kırılım hiç ölçülmedi (eski sondaj), iki taraf ayırt
+    edilemeyecek kadar yakın (< 0,3 puan ≈ 2 kat fark), ya da taraflardan
+    birinde hiç gözlem yok — ölçülmemiş rafı "daha boş" ilan etmek
+    `bicim_skorla`'daki hatanın aynısı olurdu.
     """
     if olcum.alakali_shorts is None or olcum.alakali_uzun is None:
+        return None
+    if (
+        olcum.alakali_shorts < ASGARI_FORMAT_GOZLEM
+        or olcum.alakali_uzun < ASGARI_FORMAT_GOZLEM
+    ):
         return None
     shorts = ALAKALI_SAYI_AGIRLIGI * log10(1 + olcum.alakali_shorts)
     shorts += IZLENME_AGIRLIGI * log10(1 + (olcum.medyan_izlenme_shorts or 0))

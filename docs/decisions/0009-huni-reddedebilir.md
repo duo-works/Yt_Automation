@@ -162,14 +162,35 @@ adayın üçünde de öneri Shorts ve uzun kalibresi eşiğin altında:
 
 | Aday | birleşik | shorts | uzun |
 |---|---|---|---|
-| Lise Lesèvre (en) | 1,09 | **3,30** | 1,00 |
 | Fritz Gerlich (es) | 2,22 | **3,06** | 1,95 |
 | Ernst Hanfstaengl (es) | 2,09 | **2,58** | 1,47 |
+| Fritz Gerlich (en) | 1,50 | **2,26** | 1,50 |
 
 Üçünün de uzun rafı doymuş, Shorts rafı boş. Birleşik kapı bu ikisini tek
-potada eritince Lise Lesèvre eşiğin altında kalıp **eleniyordu** — yukarıdaki
-gerekçenin ta kendisi, artık varsayım değil ölçüm. Diğer ikisi geçiyordu ama
-hangi formatla girileceği bilgisi yoktu.
+potada eritince Fritz Gerlich'in İngilizce ölçümü 1,50 ile eşiğin altında kalıp
+**eleniyordu** — yukarıdaki gerekçenin ta kendisi, artık varsayım değil ölçüm.
+Diğer ikisi geçiyordu ama hangi formatla girileceği bilgisi yoktu.
+
+#### Aynı koşumda bulunan kusur: sıfır gözlem ≠ boş raf
+
+İlk ölçüm turunda kazanan aday `Lise Lesèvre` (en) görünüyordu: birleşik 1,09,
+Shorts kalibresi 3,30. İncelenince sebebi çıktı — o sondajda **hiç Shorts
+gözlemi yoktu** (50 sonuçtan yalnızca 2'si alakalı, 0'ı Shorts).
+`bicim_skorla` arz terimlerini gözlemden kuruyor; gözlem yoksa arz sıfır
+çıkıyor ve konu sahte bir zirveye oturuyor.
+
+Bu, `ArzOlcumu.gecerli`'nin birleşik ölçüm için zaten yazdığı ilkenin format
+seviyesinde uygulanmamış hâliydi: *"hiç sonuç dönmedi" ≠ "hiçbiri alakalı
+değil"; ikisini karıştırmak bize var olmayan bir fırsat gösterir.* Etki
+sistematik ve yön olarak en kötüsü: arama ne kadar cılızsa bir formatın gözlemi
+o kadar sıfıra yakın, skoru o kadar yüksek — yani huni, YouTube'un zar zor
+indekslediği konuları tercihen zirveye taşıyordu.
+
+`ASGARI_FORMAT_GOZLEM` ile kapatıldı. Düzeltmenin ikinci ve daha önemli etkisi
+tekil adayda değil **taban çizgisinde**: sahte ölçüm `en × shorts` tabanını da
+kirletiyordu; çıkarılınca o dildeki diğer adayların kalibresi düzeldi ve
+gerçek bir aday (Fritz Gerlich en) eşiği geçti. Yukarıdaki tablo düzeltme
+sonrasıdır.
 
 Kabul edilen kısıt netleşti: DW-53 sondajı en+es'e daralttığı için hedef dışı
 dillerdeki eski adaylar (bugün 2 `tr` aday) format kalibresi **hiç**
@@ -178,5 +199,5 @@ boş kalıyor — yanlış öneri üretmektense boş bırakmak doğru, ama Notio
 "önerisiz aday" diye bir sınıf oluşuyor.
 
 Örneklem küçük (21 kalibre edilebilir aday, tek koşum) ve bu bir **geri çağırma**
-ölçümü, değer ölçümü değil: Lise Lesèvre'nin iyi bir video olup olmadığını
+ölçümü, değer ölçümü değil: Fritz Gerlich'in iyi bir video olup olmadığını
 bilmiyoruz, yalnızca huninin onu insan bakmadan atmayı bıraktığını biliyoruz.
