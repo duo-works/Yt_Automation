@@ -18,10 +18,11 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 from . import __version__, depo, kanal, kota
-from .trend import bolge, toplayici
+from .trend import bolge, konu_toplayici, toplayici, wikipedia
 from .video import MetadataHatasi, kuyrugu_oku
 
 ANAHTAR_DEGISKENI = "YOUTUBE_API_KEY"
@@ -113,6 +114,29 @@ def _trend_topla(*, derin: bool, kuru: bool, adet: int) -> int:
     return 1 if sonuc.kota_bitti and sonuc.cagri_sayisi == 0 else 0
 
 
+def _konu_topla(*, diller: str, gun: str | None, adet: int) -> int:
+    """Wikipedia okunma sıçramaları — kota harcamaz, anahtar istemez."""
+    yol = depo.varsayilan_yol()
+    secilen = tuple(d.strip() for d in diller.split(",") if d.strip())
+    hedef = date.fromisoformat(gun) if gun else None
+
+    sonuc = konu_toplayici.topla(yol, diller=secilen, gun=hedef, adet=adet)
+    print(sonuc.ozet())
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    return 1 if not sonuc.diller else 0
+
+
+def _konu_listele(*, limit: int) -> int:
+    kayitlar = konu_toplayici.adaylar(depo.varsayilan_yol(), limit=limit)
+    if not kayitlar:
+        print("Aday yok — önce `ytoto konu topla` çalıştırın.")
+        return 1
+    for k in kayitlar:
+        print(f"  {k['okunma']:>9,} · [{k['sinif']}] {k['dil']}: {k['baslik'].replace('_', ' ')}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ayristirici = argparse.ArgumentParser(
         prog="ytoto",
@@ -147,11 +171,31 @@ def main(argv: list[str] | None = None) -> int:
         "--kuru", action="store_true", help="Hiç çağrı yapma, yalnızca maliyeti bildir"
     )
 
+    konu_ay = altlar.add_parser("konu", help="Wikipedia okunma sıçramaları (kota harcamaz)")
+    konu_altlar = konu_ay.add_subparsers(dest="konu_komutu", required=True)
+
+    kt = konu_altlar.add_parser("topla", help="Günlük okunma listelerini çek ve sınıflandır")
+    kt.add_argument(
+        "--diller",
+        default=",".join(wikipedia.VARSAYILAN_DILLER),
+        help=f"Virgülle ayrık dil kodları (varsayılan: {','.join(wikipedia.VARSAYILAN_DILLER)})",
+    )
+    kt.add_argument("--gun", help="YYYY-AA-GG; boşsa verisi hazır olan son gün")
+    kt.add_argument("--adet", type=int, default=200, help="Dil başına makale (varsayılan: 200)")
+
+    kl = konu_altlar.add_parser("listele", help="Tarih/bilim adaylarını sıralı göster")
+    kl.add_argument("--limit", type=int, default=40)
+
     args = ayristirici.parse_args(argv)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
     if args.komut == "trend" and args.trend_komutu == "topla":
         return _trend_topla(derin=args.derin, kuru=args.kuru, adet=args.adet)
+    if args.komut == "konu":
+        if args.konu_komutu == "topla":
+            return _konu_topla(diller=args.diller, gun=args.gun, adet=args.adet)
+        if args.konu_komutu == "listele":
+            return _konu_listele(limit=args.limit)
     return 1
 
 
