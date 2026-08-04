@@ -150,8 +150,25 @@ def test_kota_tavani_hata_sayilmiyor():
     hiçbir desene uymadığı için adım **hata** sayılıyordu. Tavan tam olarak
     durdurmak için var; dolduğu her gün bildirim göndermek yanlış alarm.
     """
-    metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
-    assert 'grep -q "KOTA TAVANINDA DURDU"' in metin
+    ortak = (BETIKLER / "ortak.sh").read_text(encoding="utf-8")
+    assert 'grep -q "$KOTA_TAVANI_METNI"' in ortak
+    assert 'KOTA_TAVANI_METNI="KOTA TAVANINDA DURDU"' in ortak
+
+
+@pytest.mark.parametrize("betik", ["gunluk-huni.sh", "saatlik-tarama.sh"])
+def test_kota_tavani_her_iki_betikte_de_muaf(betik: str):
+    """Kusur (DW-78) tam da tek betiğin düzeltilmesinden doğdu.
+
+    `gunluk-huni.sh`'a istisna eklendi, `saatlik-tarama.sh` unutuldu ve saatlik
+    derin tarama kota bitince saat başı "düştü" diye bildirim göndermeye devam
+    etti — 2026-08-04'te 5 kez. Daha kötüsü nöbet damgası yazılmadı ve nöbetçi
+    çalışan otomasyonu sağlıksız gösterdi.
+
+    Desen artık `ortak.sh`'ta tek yerde; bu test her iki betiğin de onu
+    **kullandığını** kilitliyor.
+    """
+    metin = (BETIKLER / betik).read_text(encoding="utf-8")
+    assert "kota_tavani_mi" in metin
 
 
 def test_kota_tavani_deseni_turkce_kucultmeye_guvenmiyor():
@@ -162,10 +179,11 @@ def test_kota_tavani_deseni_turkce_kucultmeye_guvenmiyor():
     "KOTA TAVANINDA DURDU" çıktısı desene uymaz ve yanlış alarm sürerdi.
     Aynı tuzak Python'da da var (`"TAVANINDA".lower()` → "tavaninda").
     """
-    metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
-    # Yorumda ifade geçebilir; yasak olan **komut** biçimi.
-    assert 'grep -qi "kota tavanında durdu"' not in metin
-    assert 'grep -qi "KOTA TAVANINDA DURDU"' not in metin
+    for ad in ("ortak.sh", "gunluk-huni.sh", "saatlik-tarama.sh"):
+        metin = (BETIKLER / ad).read_text(encoding="utf-8")
+        # Yorumda ifade geçebilir; yasak olan **komut** biçimi.
+        assert 'grep -qi "kota tavanında durdu"' not in metin, ad
+        assert 'grep -qi "KOTA TAVANINDA DURDU"' not in metin, ad
 
 
 def test_kota_tavani_metni_sozlesme():

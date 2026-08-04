@@ -89,11 +89,11 @@ adim() {
     # bitirdiği yanlış alarm düzenine geri dönüş. Desen `ArastirmaSonucu.ozet`
     # metnine dayanıyor ve iki uçtan da testle kilitli.
     #
-    # ⚠️ Burada `-i` YOK ve bu bilinçli: Türkçe'de ASCII "I" ile "ı" ayrı
-    # harfler, `grep -i` ikisini birbirine katlamaz. "kota tavanında durdu"
-    # deseni `-i` ile yazılsa "KOTA TAVANINDA DURDU" çıktısını **hiç
-    # tutmazdı** ve düzeltme sessizce çalışmamış olurdu. Testte yakalandı.
-    if printf '%s' "$cikti" | grep -q "KOTA TAVANINDA DURDU"; then
+    # Desen ve gerekçesi `ortak.sh` → `kota_tavani_mi`'de tek yerde duruyor.
+    # Buraya kopyalanmıştı ve `saatlik-tarama.sh` unutulmuştu — kusur böyle
+    # doğdu (DW-78): huni tarafı düzeltildi, saatlik taraf saat başı yanlış
+    # alarm göndermeye devam etti.
+    if kota_tavani_mi "$cikti"; then
         kaydet "huni · $ad — günlük kota tavanı doldu (bütçe hâli, hata değil)"
         return 0
     fi
