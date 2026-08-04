@@ -174,6 +174,25 @@ Dosya adı komut adı olur (`oturum-basla.md` → `/oturum-basla`). Gövdeler bu
 
 ⚠️ Kanonik dosyalar değiştiğinde kopyayı tazelemek gerekir. Komut davranışı beklenmedik geliyorsa önce kopyanın güncel olduğunu kontrol et.
 
+### İlk kurulum — komutlar çalışmadan önce
+
+Dört adım. **Üçü sessizce bozulur**: komut hata vermez, yanlış iş yapar. Bu yüzden her adımın bir doğrulaması var; doğrulamayı atlarsanız kurulumun eksik olduğunu ilk çakışmada öğrenirsiniz.
+
+| # | Adım | Doğrulama |
+|---|---|---|
+| 1 | **Notion MCP bağlantısı** — komutların hepsi Oturum Kaydı'nı sorgular | `/oturum-basla` 2. adımda sorguyu döndürebiliyor mu |
+| 2 | **Git kimliği** — `Kişi` alanı buradan okunur | `git config user.name` → tam olarak `Mirza Sarıbıyık` veya `Ömer Faruk Güleç` |
+| 3 | **Hook onayı** (yalnız Claude Code) — proje `settings.json`'ı ilk açılışta onay ister | Yeni oturumda protokol hatırlatması geliyor mu; gelmiyorsa `/hooks` menüsünü bir kez aç |
+| 4 | **Codex kopyası** (yalnız Codex) — yukarıdaki `cp` / `Copy-Item` | `/oturum-basla` komut olarak tanınıyor mu |
+
+**Neden doğrulama şart:**
+
+- **MCP yoksa** sorgu düşer. Protokolün tüm güvencesi o sorgudur; `oturum-basla.md` bu yüzden *"hatayı 'aktif kayıt yok' diye yorumlama"* diyor. Hata bastırılırsa komut "çakışma yok" der ve çalışmaya izin verir — güvence tersine döner.
+- **Git kimliği yanlışsa** kayıt yanlış kişiye açılır ve bu **fark edilmez**. Ortak Notion hesabı kimin çalıştığını bilmiyor; tek kaynak git'tir. `user.name` boşsa komut sorar, ama yanlışsa sormaz.
+- **Hook onaylanmazsa** `SessionStart` hatırlatması ve `Stop` uyarısı hiç çalışmaz. Claude Code sessiz başarısızlığı bildirmez — komutlar yine elle çalışır, ama protokolü hatırlatan katman kaybolur.
+
+> Ortak Notion hesabı ve her iki kişinin iki ajan kullanması, bu kurulumun ekipteki **her makinede ayrı ayrı** yapılmasını gerektiriyor. Bir makinede eksik kurulum, diğer makinedeki doğru kurulumu da işe yaramaz hale getirir: çakışma kontrolü ancak herkes kaydını açıyorsa anlamlıdır.
+
 ---
 
 ## Kesin kurallar

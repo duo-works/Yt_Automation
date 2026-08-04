@@ -125,7 +125,7 @@ Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnız
 
 ## 5. Bir görevin baştan sona akışı
 
-1. **Notion** → görevi **Yapılıyor**'a al, kendine ata
+1. **Notion** → görevi **In progress**'e al; `Sorumlu` alanında `Mirza` veya `Ömer` seç. Ortak hesap nedeniyle `Sahip` person alanı ekip kişisini ayıramaz.
 2. `main`'i güncelle, branch aç:
    ```bash
    git switch main
@@ -154,7 +154,7 @@ Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnız
 
 ## 6. Çakışmayı önleyen tek kural
 
-**Bir görev aynı anda tek kişide olur.**
+**Bir görev aynı anda tek kişide olur.** `Sorumlu` alanı mutlaka `Mirza` veya `Ömer` olmalıdır.
 
 İkiniz de aynı dosyaya gireceksiniz diye endişeleniyorsanız, çözüm kod tarafında değil: önce Notion'da görevi bölün. Kod üstünde değil, **görev üstünde** koordine olun.
 

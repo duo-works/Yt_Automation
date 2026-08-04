@@ -13,6 +13,8 @@ Icon?
 # --- Ajan / editör kişisel ayarları ---
 # .claude/settings.json paylaşılır (ekip hook'ları); .local.json kişiseldir.
 .claude/settings.local.json
+# Ajanların açtığı git worktree'leri — makineye özel, paylaşılmaz.
+.claude/worktrees/
 
 # --- Editör / IDE ---
 .vscode/*
@@ -54,6 +56,12 @@ venv/
 *.egg-info/
 htmlcov/
 .coverage
+
+# --- Yerel durum deposu (kota defteri, trend zaman serisi) ---
+veri/
+*.db
+*.db-wal
+*.db-shm
 
 # --- Genel ---
 *.log
