@@ -30,6 +30,18 @@ class SahteNotion:
         return {"url": f"https://notion.so/sayfa-{n}", "id": f"id-{n}"}
 
 
+def govde_yazisi(bloklar: list[dict]) -> str:
+    """Blokların düz metni — blok TİPİNDEN bağımsız.
+
+    ⚠️ Testler önce `b["paragraph"]` diye sabit tipe bakıyordu ve gövdeye bir
+    `heading_3` eklenince dördü birden `KeyError` verdi. Blok tipi bir sunum
+    ayrıntısı; test metnin orada olup olmadığını doğrulamalı.
+    """
+    return " ".join(
+        parca["text"]["content"] for blok in bloklar for parca in blok[blok["type"]]["rich_text"]
+    )
+
+
 @pytest.fixture
 def olcum(yol: Path):
     """Trend ölçümü yazar — aktarımın girdisi."""
@@ -204,20 +216,19 @@ def test_govde_arz_uyarisini_tasiyor(yol: Path, olcum):
     """Bu bir TALEP sinyali. Uyarı olmadan Ömer doymuş bir nişe video üretir."""
     olcum("v1")
     sinyal = notion.aktarilmamis_adaylar(yol)[0]
-    metin = " ".join(
-        b["paragraph"]["rich_text"][0]["text"]["content"] for b in notion.govde_metni(sinyal)
-    )
-    assert "talep" in metin
+    metin = govde_yazisi(notion.govde_metni(sinyal))
+    assert "TALEP" in metin
     assert "bosluk rapor" in metin
     assert "v1" in metin, "video kimliği izlenebilirlik için gövdede olmalı"
+    assert "**" not in metin and "`" not in metin, (
+        "Notion markdown yorumlamıyor — işaretler ekranda literal görünür"
+    )
 
 
 def test_govde_ivme_yoksa_sebebini_yaziyor(yol: Path, olcum):
     olcum("v1", kosular=1)
     sinyal = notion.aktarilmamis_adaylar(yol, sirala="izlenme")[0]
-    metin = " ".join(
-        b["paragraph"]["rich_text"][0]["text"]["content"] for b in notion.govde_metni(sinyal)
-    )
+    metin = govde_yazisi(notion.govde_metni(sinyal))
     assert "hesaplanamadı" in metin
 
 
@@ -374,16 +385,16 @@ def test_wiki_govdesi_kaynak_dosyasini_tasiyor(yol: Path, wiki_aday):
     """Kabul ölçütü: Ömer içerik üretimine başlayabilecek kadar bağlam buluyor."""
     wiki_aday("Q1", "Cleopatra", dosya=True)
     kayit = notion.aktarilmamis_bosluklar(yol)[0]
-    metin = " ".join(
-        b["paragraph"]["rich_text"][0]["text"]["content"]
-        for b in notion.bosluk_govdesi(kayit, kaynak.dosyayi_oku(yol, "Q1"))
-    )
+    metin = govde_yazisi(notion.bosluk_govdesi(kayit, kaynak.dosyayi_oku(yol, "Q1")))
 
     assert "TALEP" in metin and "ARZ" in metin and "BOŞLUK SKORU" in metin
     assert "doğum tarihi: MÖ 69" in metin
     assert "britishmuseum" in metin
     assert "Public domain" in metin, "görselin lisansı olmadan kullanılamaz"
-    assert "sıralamadır, eşik değildir" in metin, "kalibrasyon uyarısı taşınmalı"
+    assert "SIRALAMADIR, eşik değildir" in metin, "kalibrasyon uyarısı taşınmalı"
+    assert "**" not in metin and "`" not in metin, (
+        "Notion markdown yorumlamıyor — işaretler ekranda literal görünür"
+    )
 
 
 def test_kaynaksiz_aday_acikca_uyariyor(yol: Path, wiki_aday):
@@ -398,10 +409,7 @@ def test_kaynaksiz_aday_acikca_uyariyor(yol: Path, wiki_aday):
     assert notion.dosya_dolu(dosya) is False
 
     kayit = notion.aktarilmamis_bosluklar(yol)[0]
-    metin = " ".join(
-        b["paragraph"]["rich_text"][0]["text"]["content"]
-        for b in notion.bosluk_govdesi(kayit, dosya)
-    )
+    metin = govde_yazisi(notion.bosluk_govdesi(kayit, dosya))
     assert "videoya dönüşmemeli" in metin
 
 
