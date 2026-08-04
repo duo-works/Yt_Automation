@@ -26,7 +26,8 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 #
 # 1 → kota defteri + YouTube trend tabloları
 # 2 → Wikipedia makale/okunma tabloları (DW-34)
-SEMA_SURUMU = 2
+# 3 → kaynak dosyası: referans, olgu, görsel (DW-37)
+SEMA_SURUMU = 3
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -113,6 +114,27 @@ CREATE TABLE IF NOT EXISTS okunma (
 );
 
 CREATE INDEX IF NOT EXISTS okunma_gun ON okunma(gun);
+
+-- Bir adayın kaynak dosyası: videodaki iddiaların dayanağı.
+--
+-- PRD'nin YPP karşı önlemlerinin birincisi "her videonun altında gerçek bir
+-- kaynak" diyor. Diğer tablolar konu **seçiyor**; bu tablo seçilen konunun
+-- neye dayanacağını tutuyor.
+--
+-- `qid` üzerinden anahtarlanıyor, (dil, baslik) üzerinden değil: aynı konu
+-- her dilde ayrı makale ama kaynaklar ortak. Bir kez çekilir, hepsi kullanır.
+CREATE TABLE IF NOT EXISTS kaynak (
+    qid      TEXT NOT NULL,
+    tur      TEXT NOT NULL,  -- referans | olgu | gorsel
+    deger    TEXT NOT NULL,  -- URL, olgu metni ya da dosya adı
+    etiket   TEXT,           -- olgunun ne olduğu ("kuruluş tarihi")
+    atif     TEXT,           -- görselde zorunlu: kime atıf verilecek
+    lisans   TEXT,           -- görselde zorunlu: boşsa kullanılmaz
+    cekilme  TEXT NOT NULL,
+    PRIMARY KEY (qid, tur, deger)
+);
+
+CREATE INDEX IF NOT EXISTS kaynak_qid ON kaynak(qid);
 """
 
 
@@ -141,25 +163,29 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # sonraki ifadelere "kilit varsa bekle" davranışını kazandırır.
     baglanti.execute("PRAGMA busy_timeout=30000")
 
-    # ⚠️ Aşağıdaki iki blok da **koşullu**, ve bu kritik.
+    # ⚠️ `journal_mode` değişimi özel (exclusive) kilit istiyor ve
+    # `busy_timeout`u **onurlandırmıyor**: başka bağlantı işlemdeyse beklemeden
+    # `SQLITE_BUSY` döner. Bu satır iki kez "düzeltildi" ve iki kez geri geldi:
     #
-    # `journal_mode` geçişi yukarıdaki `busy_timeout`un **istisnası**: özel
-    # (exclusive) kilit istiyor ve beklemiyor — başka bağlantı işlemdeyse
-    # anında `SQLITE_BUSY` dönüyor. Yani bir üstteki yorumun verdiği "artık
-    # beklenir" garantisi tam bu satır için geçerli değil.
+    #   1. Pragma sırası düzeltildi (busy_timeout önce)     → 25 iş parçacığında düştü
+    #   2. Koşullu hale getirildi (önce oku, gerekiyorsa yaz) → yeni veritabanında düştü
     #
-    # Taze bir dosyada tüm bağlantılar aynı anda "WAL değil" görüp hepsi
-    # geçişi deniyor; biri kazanıyor, kalanı `database is locked` alıyor.
-    # Ölçüldü: 32 eşzamanlı bağlantı, 40 turun 2'sinde tetikleniyor (macOS);
-    # CI'ın Linux koşucusunda daha sık — `test_esZamanli_harcama_butceyi_asmaz`
-    # oradan düşüyordu. Koşul pencereyi daralttı, kapatmadı: kapatan şey
-    # hatanın yutulması.
+    # İkincisinin kaçırdığı: **yeni** bir dosyada tüm bağlantılar aynı anda
+    # "WAL değil" görüyor ve hepsi geçişi deniyor. Koşul pencereyi daralttı,
+    # kapatmadı — kapatan şey hatanın yutulması.
     #
-    # Yarışı kazanmaya çalışmak yanlış çerçeve: WAL **kalıcı bir veritabanı
-    # özelliği**, yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Ölçüldü (DW-50): 32 eşzamanlı bağlantı, bariyerle senkron, 1280 açma →
+    # kusurlu kodda 1 × `database is locked`. CI'ın Linux koşucusunda daha
+    # sık: `test_esZamanli_harcama_butceyi_asmaz` oradan düşüyordu.
+    # Regresyon testi `tests/test_depo.py`'de ve yarışı beklemiyor, kilidi
+    # kendisi tutuyor — bu hatayı olasılığa bağlı bir test üç kez kaçırdı.
+    #
+    # Yarışı kazanmaya çalışmak yanlış çerçeve. WAL **kalıcı bir veritabanı
+    # özelliği**: yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Bu yüzden hata yutuluyor — kaybetmek zararsız.
     if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
-        # Kaybetmek zararsız: bu bağlantı bu seferlik eski kip'te çalışır,
-        # doğruluk etkilenmez — yalnızca eşzamanlılık.
+        # Bu bağlantı bu seferlik eski kip'te çalışır; doğruluk etkilenmez,
+        # yalnızca eşzamanlılık.
         with suppress(sqlite3.OperationalError):
             baglanti.execute("PRAGMA journal_mode=WAL")
 
