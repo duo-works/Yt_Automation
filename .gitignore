@@ -10,6 +10,12 @@
 Icon?
 ._*
 
+# --- Ajan / editör kişisel ayarları ---
+# .claude/settings.json paylaşılır (ekip hook'ları); .local.json kişiseldir.
+.claude/settings.local.json
+# Ajanların açtığı git worktree'leri — makineye özel, paylaşılmaz.
+.claude/worktrees/
+
 # --- Editör / IDE ---
 .vscode/*
 !.vscode/extensions.json

@@ -10,4 +10,6 @@
 /.github/       @duo-works/core
 /CONTRIBUTING.md @duo-works/core
 /CLAUDE.md      @duo-works/core
+/AGENTS.md      @duo-works/core
+/.claude/       @duo-works/core
 /docs/decisions/ @duo-works/core
