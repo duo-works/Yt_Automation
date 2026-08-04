@@ -29,9 +29,27 @@ WHERE "Durum" = 'Devam ediyor'
 
 **Sorgu hata verirse durma noktası burasıdır.** Bu SQL aracı ücretsiz planda saatlik kotalı. Hatayı "aktif kayıt yok" diye yorumlama — protokolün tüm güvencesi bu sorguda.
 
-Kota dolduysa yedek yol: aynı data source'ta arama yap, dönen kayıtları tek tek aç, `Durum` alanına bak. Yavaş ama kotasız. İkisi de başarısızsa kullanıcıya söyle ve **çoklu-ajan işine başlama**.
-
 > Kota bütçesi: SQL yalnızca bu sorgu için harcanır. Raporlama ve listeleme `fetch`/`search` ile yapılır — onlar kotasız.
+
+### Yedek yol — MCP yoksa ya da kota dolduysa
+
+```bash
+python3 scripts/oturum-sorgula.py
+```
+
+MCP'ye hiç dokunmaz; `NOTION_TOKEN` ile doğrudan API'ye gider. Token `.env`'de zaten var (trend hattı Notion'a yazıyor), yani **ek kurulum istemez**. Ayrı bir çalışma dizininde (worktree) çalışıyorsan `.env` orada olmaz — betik ana çalışma dizinindekini bulur.
+
+Çıkış kodu doğrudan ne yapacağını söyler:
+
+| Kod | Anlamı | Ne yap |
+|---|---|---|
+| `0` | sorgu çalıştı, kanarya göründü | 4. adıma geç (3. adım karşılandı) |
+| `2` | sorgu çalıştı, **kanarya yok** | kanal bozuk — kullanıcıya söyle, **başlama** |
+| `1` | sorgu hiç çalışmadı | "kayıt yok" diye yorumlama — kullanıcıya söyle, **başlama** |
+
+Bu yol **gerçekten gerekiyor**: yazıldığı gün Notion MCP `Needs authentication` durumundaydı ve MCP tarafı hiç sorgulanamıyordu. İkisi de başarısızsa kullanıcıya söyle ve **çoklu-ajan işine başlama**.
+
+⚠️ `Durum` alanı Notion'da **select**, `status` değil. Elle API sorgusu yazarsan `{"select": {...}}` kullan; `status` filtresi `validation_error` döndürür.
 
 ## 3. 🚦 Kanaryayı doğrula
 
