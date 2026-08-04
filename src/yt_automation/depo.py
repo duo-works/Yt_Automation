@@ -1,0 +1,331 @@
+"""SQLite deposu — süreçler arası paylaşılan durum.
+
+Neden veritabanı: ADR-0004 *"veritabanı yok"* demişti ve gerekçesi doğruydu —
+günde 6 videoluk bir kuyruğun çözeceği bir problemi yok. Kota sayacı farklı
+bir şekil: **iki ayrı süreç** aynı günlük bütçeden içiyor (yükleme hattı ve
+trend hattı) ve "oku, kontrol et, yaz" sırası bölünürse bütçe sessizce aşılır.
+
+Dosya + kilit ile de çözülebilirdi ama doğru kilitleme yazmak, `sqlite3`'ün
+standart kütüphanede hazır verdiği şeyi elde etmeye çalışmak olurdu.
+Ayrıntılı gerekçe: `docs/decisions/0005-kota-kaliciligi-sqlite.md`.
+"""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
+from pathlib import Path
+
+VARSAYILAN_DIZIN = "veri"
+VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
+
+# Şema sürümü — `PRAGMA user_version` ile saklanıyor. Tablo veya indeks
+# eklediğinizde **artırın**, yoksa mevcut veritabanları yeni şemayı almaz.
+#
+# 1 → kota defteri + YouTube trend tabloları
+# 2 → Wikipedia makale/okunma tabloları (DW-34)
+# 3 → kaynak dosyası: referans, olgu, görsel (DW-37)
+# 4 → arz sondajı: talep-arz boşluğu ölçümü (DW-35)
+# 5 → niş kanal izleme: kanal kataloğu + kanal bazlı ölçüm (DW-36)
+# 6 → Notion aktarım defteri (DW-31)
+# 7 → arz'a Shorts/uzun format kırılımı (DW-52)
+SEMA_SURUMU = 7
+
+# Var olan tabloya kolon ekleyen geçişler. `CREATE TABLE IF NOT EXISTS` yeni
+# kolonu **eklemez**; sıfırdan kurulan veritabanı ise kolonları SEMA'dan zaten
+# alır. Bu yüzden geçişler yalnızca `0 < eski_sürüm < hedef` iken koşuyor —
+# sıfır "hiç kurulmamış" demek, geçilecek bir şey yok.
+GECISLER: dict[int, tuple[str, ...]] = {
+    7: (
+        "ALTER TABLE arz ADD COLUMN alakali_shorts INTEGER",
+        "ALTER TABLE arz ADD COLUMN medyan_izlenme_shorts INTEGER",
+        "ALTER TABLE arz ADD COLUMN alakali_uzun INTEGER",
+        "ALTER TABLE arz ADD COLUMN medyan_izlenme_uzun INTEGER",
+    ),
+}
+
+SEMA = """
+CREATE TABLE IF NOT EXISTS kota_harcama (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    gun    TEXT    NOT NULL,  -- Pasifik takvim günü (YYYY-AA-GG) — kotanın sıfırlandığı sınır
+    an     TEXT    NOT NULL,  -- UTC, ISO 8601
+    islem  TEXT    NOT NULL,
+    birim  INTEGER NOT NULL,
+    surec  TEXT              -- harcamayı kimin yaptığı: "yukleme", "trend", …
+);
+
+CREATE INDEX IF NOT EXISTS kota_harcama_gun ON kota_harcama(gun);
+
+-- Bir videonun değişmeyen bilgisi. Aynı video onlarca bölgede ve her koşuda
+-- yeniden görünür; burada bir kez durur.
+CREATE TABLE IF NOT EXISTS video (
+    video_id        TEXT PRIMARY KEY,
+    baslik          TEXT NOT NULL,
+    kanal_id        TEXT,
+    kanal_adi       TEXT,
+    yayin_zamani    TEXT,     -- UTC, ISO 8601
+    kategori_id     INTEGER,  -- YouTube'un videoya atadığı kategori
+    sure_sn         INTEGER,
+    dil             TEXT,     -- DW-30 dolduracak
+    dil_kaynagi     TEXT,     -- defaultAudioLanguage | defaultLanguage | llm
+    konu_etiketleri TEXT,     -- JSON dizi, topicDetails.topicCategories
+    sinif           TEXT,     -- DW-30 dolduracak: tarih | bilim | diger
+    sinif_kaynagi   TEXT,     -- kategori | konu | llm
+    ilk_gorulme     TEXT NOT NULL
+);
+
+-- Zaman serisi: bir videonun bir bölgede, bir koşu anındaki durumu.
+-- DW-29'un hız/ivme hesabı bu tablodan türetilecek.
+CREATE TABLE IF NOT EXISTS olcum (
+    video_id       TEXT    NOT NULL,
+    bolge          TEXT    NOT NULL,
+    an             TEXT    NOT NULL,  -- koşu zamanı (UTC); tüm çağrılar aynı değeri taşır
+    liste_kategori INTEGER,           -- hangi listede göründü (0 = kısıtsız)
+    sira           INTEGER,
+    izlenme        INTEGER,
+    begeni         INTEGER,
+    yorum          INTEGER,
+    PRIMARY KEY (video_id, bolge, an)
+);
+
+CREATE INDEX IF NOT EXISTS olcum_an ON olcum(an);
+CREATE INDEX IF NOT EXISTS olcum_video ON olcum(video_id);
+
+-- Koşu defteri: ne zaman, ne kadar bölge, kaç çağrı, kaç birim, kaç hata.
+CREATE TABLE IF NOT EXISTS kosu (
+    an            TEXT PRIMARY KEY,
+    tur           TEXT NOT NULL,  -- genis | derin
+    bolge_sayisi  INTEGER,
+    cagri_sayisi  INTEGER,
+    harcanan_kota INTEGER,
+    hata          TEXT            -- boşsa hatasız; doluysa "<sayı> bölge: <örnek>"
+);
+
+-- Wikipedia makalesi. Anahtar (dil, başlık): aynı konu her dilde ayrı satır,
+-- çünkü okunma da dil bazında. Diller arası bağ `qid` üzerinden kurulur.
+CREATE TABLE IF NOT EXISTS makale (
+    dil           TEXT NOT NULL,
+    baslik        TEXT NOT NULL,
+    qid           TEXT,     -- Wikidata kimliği; diller arası ortak kimlik
+    turler        TEXT,     -- JSON, Wikidata P31/P279 kimlikleri
+    sinif         TEXT,     -- tarih | bilim | diger | belirsiz
+    sinif_kaynagi TEXT,     -- wikidata | llm
+    ilk_gorulme   TEXT NOT NULL,
+    PRIMARY KEY (dil, baslik)
+);
+
+CREATE INDEX IF NOT EXISTS makale_qid ON makale(qid);
+CREATE INDEX IF NOT EXISTS makale_sinif ON makale(sinif);
+
+-- Günlük okunma serisi. Wikipedia gün bazında yayımlıyor, saat bazında değil —
+-- hız/ivme hesabının çözünürlüğü bu yüzden bir gün.
+CREATE TABLE IF NOT EXISTS okunma (
+    dil     TEXT    NOT NULL,
+    baslik  TEXT    NOT NULL,
+    gun     TEXT    NOT NULL,  -- YYYY-AA-GG
+    okunma  INTEGER NOT NULL,
+    sira    INTEGER,           -- o günün listesindeki yeri; seri çekiminde boş
+    PRIMARY KEY (dil, baslik, gun)
+);
+
+CREATE INDEX IF NOT EXISTS okunma_gun ON okunma(gun);
+
+-- Bir adayın kaynak dosyası: videodaki iddiaların dayanağı.
+--
+-- PRD'nin YPP karşı önlemlerinin birincisi "her videonun altında gerçek bir
+-- kaynak" diyor. Diğer tablolar konu **seçiyor**; bu tablo seçilen konunun
+-- neye dayanacağını tutuyor.
+--
+-- `qid` üzerinden anahtarlanıyor, (dil, baslik) üzerinden değil: aynı konu
+-- her dilde ayrı makale ama kaynaklar ortak. Bir kez çekilir, hepsi kullanır.
+CREATE TABLE IF NOT EXISTS kaynak (
+    qid      TEXT NOT NULL,
+    tur      TEXT NOT NULL,  -- referans | olgu | gorsel
+    deger    TEXT NOT NULL,  -- URL, olgu metni ya da dosya adı
+    etiket   TEXT,           -- olgunun ne olduğu ("kuruluş tarihi")
+    atif     TEXT,           -- görselde zorunlu: kime atıf verilecek
+    lisans   TEXT,           -- görselde zorunlu: boşsa kullanılmaz
+    cekilme  TEXT NOT NULL,
+    PRIMARY KEY (qid, tur, deger)
+);
+
+CREATE INDEX IF NOT EXISTS kaynak_qid ON kaynak(qid);
+
+-- Arz sondajı: bir konuda YouTube'da **ne varsa** onun ölçümü.
+--
+-- Huninin tek pahalı adımı burası (sondaj başına 102 birim), o yüzden sonuç
+-- diske yazılıyor: aynı konuyu iki kez sondalamak 102 birimi çöpe atmak olur.
+--
+-- ⚠️ **Skor burada yok ve bu bilinçli.** Skor bu ölçümlerden türetiliyor;
+-- saklanırsa ağırlıklar ayarlandığında bayatlar ve "hangi formülle
+-- hesaplanmıştı" sorusu doğar. Ham ölçüm kalıcı, skor okuma anında.
+--
+-- `search.list`'in `totalResults` alanı **kaydedilmiyor**: Google onu tahmini
+-- veriyor ve gerçekten yanıltıcı. Arz, dönen videoların kendi
+-- istatistiklerinden ölçülüyor.
+CREATE TABLE IF NOT EXISTS arz (
+    qid            TEXT    NOT NULL,
+    dil            TEXT    NOT NULL,  -- sondajın dili (relevanceLanguage)
+    an             TEXT    NOT NULL,
+    sorgu          TEXT    NOT NULL,
+    donen          INTEGER NOT NULL,  -- search.list'in döndürdüğü video sayısı
+    alakali        INTEGER NOT NULL,  -- başlığı konuyla gerçekten örtüşen
+    medyan_izlenme INTEGER,
+    ust_izlenme    INTEGER,
+    medyan_yas_gun INTEGER,
+    medyan_abone   INTEGER,
+    harcanan       INTEGER NOT NULL,  -- bu sondajın gerçek kota maliyeti
+    -- Format kırılımı (DW-52). NULL = kırılım ölçülmedi (eski sondaj), sıfır
+    -- değil — "bilinmiyor ≠ sıfır" ayrımı buraya da uygulanıyor.
+    alakali_shorts        INTEGER,  -- alakalı sonuçların ≤ 180 sn olanları
+    medyan_izlenme_shorts INTEGER,
+    alakali_uzun          INTEGER,
+    medyan_izlenme_uzun   INTEGER,
+    PRIMARY KEY (qid, dil, an)
+);
+
+CREATE INDEX IF NOT EXISTS arz_qid ON arz(qid);
+
+-- İzlenen niş kanallar. Katalog `nis.IZLENEN_KANALLAR`'da (handle listesi);
+-- bu tablo handle'ın çözülmüş hâlini tutuyor, böylece `channels.list` bir kez
+-- ödeniyor.
+CREATE TABLE IF NOT EXISTS nis_kanal (
+    kanal_id        TEXT PRIMARY KEY,
+    handle          TEXT NOT NULL UNIQUE,
+    ad              TEXT,
+    sinif           TEXT,     -- tarih | bilim; katalogdan gelir, ölçülmez
+    yukleme_listesi TEXT,     -- contentDetails.relatedPlaylists.uploads
+    abone           INTEGER,  -- gizlenmişse NULL
+    video_sayisi    INTEGER,
+    guncelleme      TEXT NOT NULL
+);
+
+-- Niş videoların ölçümü. `olcum` tablosu kullanılmıyor: orada `bolge`
+-- anahtarın parçası ve niş videoların bölgesi yok. Yapay bir bölge kodu
+-- koymak DW-29'un `COUNT(DISTINCT bolge)` yayılım hesabını kirletirdi.
+--
+-- Video metadata'sı ortak `video` tablosunda duruyor — aynı video hem çartta
+-- hem niş listede görünebilir ve başlığı iki yerde tutmak ayrışma demek.
+CREATE TABLE IF NOT EXISTS nis_olcum (
+    video_id TEXT NOT NULL,
+    kanal_id TEXT NOT NULL,
+    an       TEXT NOT NULL,
+    izlenme  INTEGER,
+    begeni   INTEGER,
+    yorum    INTEGER,
+    PRIMARY KEY (video_id, an)
+);
+
+CREATE INDEX IF NOT EXISTS nis_olcum_kanal ON nis_olcum(kanal_id);
+
+-- Aktarım defteri: hangi video hangi hedefe gönderildi.
+--
+-- "Bu daha önce aktarıldı mı?" sorusunun ucuz cevabı burada. Notion'a sormak
+-- her koşuda bir okuma çağrısı demek olurdu ve okuma tarafı ücretsiz planda
+-- saatlik kotalı — kaçındığımız şey tam olarak o.
+--
+-- `hedef` sütunu şimdilik yalnızca 'notion' değerini alıyor; ikinci bir hedef
+-- (örneğin bir web panosu) eklendiğinde şema değişmesin diye anahtarda.
+CREATE TABLE IF NOT EXISTS aktarim (
+    video_id  TEXT NOT NULL,
+    hedef     TEXT NOT NULL,
+    sayfa_url TEXT,
+    an        TEXT NOT NULL,
+    PRIMARY KEY (video_id, hedef)
+);
+"""
+
+
+def varsayilan_yol() -> Path:
+    """Veritabanının varsayılan yeri.
+
+    `YT_OTOMASYON_VERI` ortam değişkeni verilmişse orası, yoksa çalışma
+    dizinindeki `veri/`. Depo git'e girmez (`.gitignore`).
+    """
+    return Path(os.environ.get(VERI_DIZINI_DEGISKENI) or VARSAYILAN_DIZIN) / "yt_automation.db"
+
+
+def baglan(yol: Path) -> sqlite3.Connection:
+    """Şeması hazır bir bağlantı açar.
+
+    `isolation_level=None` bilinçli: Python'un örtük işlem yönetimi kapanır,
+    işlemi biz `BEGIN IMMEDIATE` ile açarız. Örtük mod `BEGIN DEFERRED`
+    kullanıyor ve yazma kilidini ilk `INSERT`'e kadar almıyor — tam olarak
+    kaçındığımız yarış oradan doğar.
+    """
+    yol.parent.mkdir(parents=True, exist_ok=True)
+    baglanti = sqlite3.connect(yol, isolation_level=None, timeout=30.0)
+    baglanti.row_factory = sqlite3.Row
+
+    # ⚠️ `busy_timeout` en başta gelmeli: kendisi kilit istemez ama ondan
+    # sonraki ifadelere "kilit varsa bekle" davranışını kazandırır.
+    baglanti.execute("PRAGMA busy_timeout=30000")
+
+    # ⚠️ `journal_mode` değişimi özel (exclusive) kilit istiyor ve
+    # `busy_timeout`u **onurlandırmıyor**: başka bağlantı işlemdeyse beklemeden
+    # `SQLITE_BUSY` döner. Bu satır iki kez "düzeltildi" ve iki kez geri geldi:
+    #
+    #   1. Pragma sırası düzeltildi (busy_timeout önce)     → 25 iş parçacığında düştü
+    #   2. Koşullu hale getirildi (önce oku, gerekiyorsa yaz) → yeni veritabanında düştü
+    #
+    # İkincisinin kaçırdığı: **yeni** bir dosyada tüm bağlantılar aynı anda
+    # "WAL değil" görüyor ve hepsi geçişi deniyor. Koşul pencereyi daralttı,
+    # kapatmadı — kapatan şey hatanın yutulması.
+    #
+    # Ölçüldü (DW-50): 32 eşzamanlı bağlantı, bariyerle senkron, 1280 açma →
+    # kusurlu kodda 1 × `database is locked`. CI'ın Linux koşucusunda daha
+    # sık: `test_esZamanli_harcama_butceyi_asmaz` oradan düşüyordu.
+    # Regresyon testi `tests/test_depo.py`'de ve yarışı beklemiyor, kilidi
+    # kendisi tutuyor — bu hatayı olasılığa bağlı bir test üç kez kaçırdı.
+    #
+    # Yarışı kazanmaya çalışmak yanlış çerçeve. WAL **kalıcı bir veritabanı
+    # özelliği**: yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Bu yüzden hata yutuluyor — kaybetmek zararsız.
+    if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
+        # Bu bağlantı bu seferlik eski kip'te çalışır; doğruluk etkilenmez,
+        # yalnızca eşzamanlılık.
+        with suppress(sqlite3.OperationalError):
+            baglanti.execute("PRAGMA journal_mode=WAL")
+
+    # Aynı gerekçe şema için: `CREATE TABLE IF NOT EXISTS` var olan tabloda
+    # işe yaramıyor ama yine de yazma kilidi alıyor. `user_version` ucuz bir
+    # okuma; şema yalnızca gerçekten eksikse kuruluyor.
+    eski_surum = baglanti.execute("PRAGMA user_version").fetchone()[0]
+    if eski_surum < SEMA_SURUMU:
+        baglanti.executescript(SEMA)
+        if eski_surum:
+            # Sıfırdan kurulumda kolonlar SEMA'dan geldi; ALTER bir daha
+            # eklemeye kalkar ve "duplicate column" ile düşerdi.
+            for surum, ifadeler in sorted(GECISLER.items()):
+                if eski_surum < surum:
+                    for ifade in ifadeler:
+                        # İki süreç geçişi aynı anda deneyebilir; WAL
+                        # geçişiyle aynı çerçeve — yarışı kaybetmek zararsız,
+                        # kolon zaten eklenmiş demektir.
+                        with suppress(sqlite3.OperationalError):
+                            baglanti.execute(ifade)
+        baglanti.execute(f"PRAGMA user_version = {SEMA_SURUMU}")
+    return baglanti
+
+
+@contextmanager
+def yazma_islemi(yol: Path) -> Iterator[sqlite3.Connection]:
+    """Serileştirilmiş yazma işlemi.
+
+    `BEGIN IMMEDIATE` yazma kilidini **işlemin başında** alır. İki süreç aynı
+    anda girerse biri bekler; ikisi de aynı "kalan" değerini okuyup ikisi de
+    harcayamaz. Kota muhasebesinin tek gerçek güvencesi budur.
+    """
+    baglanti = baglan(yol)
+    try:
+        baglanti.execute("BEGIN IMMEDIATE")
+        try:
+            yield baglanti
+        except BaseException:
+            baglanti.execute("ROLLBACK")
+            raise
+        baglanti.execute("COMMIT")
+    finally:
+        baglanti.close()

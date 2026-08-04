@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Saatlik trend taraması — macOS `launchd` görevi.
+
+  Kurulum ve kaldırma: `scripts/zamanlama-kur.sh` (yolları bu şablona basıyor).
+
+  Neden `launchd`, `cron` değil: macOS'ta `cron` çalışıyor ama `launchd`
+  laptop kapalıyken kaçırılan koşumu uyanışta telafi ediyor (`StartInterval`
+  ile birlikte). Bizim için önemli, çünkü DW-29'un hız hesabı düzensiz
+  örneklemeye dayanıklı ama hiç örnek almamak yine de veri kaybı.
+
+  ⚠️ `StartInterval` kullanıyoruz, `StartCalendarInterval` değil. Fark: takvim
+  tabanlı tetik laptop kapalıysa o saati atlar ve bir sonraki saati bekler;
+  aralık tabanlı tetik uyanışta hemen çalışır. `mostPopular` yaklaşık saatlik
+  tazelendiği için 3600 saniyeden sık örneklemenin bilgi getirisi yok.
+
+  ⚠️ Üç yol birbirinden AYRI ve bu ayrım ADR-0008'in kararı:
+    · __CALISMA__ → kod. Sabit ref'e iğnelenmiş worktree; geliştirme ağacı dal
+      değiştirince buradaki dosyalar kaybolmaz. Ayrılmadan önce tam bu oldu:
+      2026-07-30'da `main`'e geçildi, betik yok oldu, görev beş saat 127 verdi.
+    · __VERI__   → depo ve günlükler. Geliştirme ağacının `veri/` dizini;
+      gitignore'da olduğu için dal değişiminden zaten etkilenmiyor ve verinin
+      tek bir yerde kalması için bilinçli olarak worktree'ye taşınmıyor.
+    · __ENV__    → sırlar. Geliştirme ağacının `.env`'i; kopyalamak sırrı
+      çoğaltmak olurdu.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>works.duo.yt-trend</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__BETIK__</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <!-- Yükleme anında bir kez çalışsın: kurulumun işlediği hemen görülür,
+         bir saat beklemek gerekmez. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>__CALISMA__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>YT_OTOMASYON_KOK</key>
+        <string>__CALISMA__</string>
+        <key>YT_OTOMASYON_VERI</key>
+        <string>__VERI__</string>
+        <key>YT_OTOMASYON_ENV</key>
+        <string>__ENV__</string>
+    </dict>
+
+    <!-- Betiğin kendi günlüğü var; bunlar `launchd` seviyesindeki hatalar
+         (betik hiç başlayamadıysa) için. 127 olayında yakalayan tek şey
+         buydu — ama kimse okumadığı için beş saat sonra fark edildi.
+         Betik artık ayrıca macOS bildirimi gönderiyor. -->
+    <key>StandardOutPath</key>
+    <string>__VERI__/gunluk/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>__VERI__/gunluk/launchd.hata.log</string>
+
+    <!-- Düşük öncelik: arka plan işi, kullanıcının yaptığı işi yavaşlatmasın. -->
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

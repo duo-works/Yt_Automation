@@ -18,8 +18,10 @@ Link: <!-- Notion görev linkini yapıştırın -->
 ## Kontrol listesi
 
 - [ ] PR başlığı `<tür>(<kapsam>): <açıklama> [DW-<numara>]` formatında
-- [ ] Notion'daki görev **İncelemede** durumuna alındı, bu PR'ın linki göreve eklendi
+- [ ] Notion'daki görev **In review** durumuna alındı, bu PR'ın linki göreve eklendi
+- [ ] Notion **📓 Oturum Kaydı**'ndaki kayıt güncellendi (durum + sıradaki adım + PR linki)
 - [ ] `.env` veya başka bir sır commit edilmedi
 - [ ] Yeni ortam değişkeni varsa `.env.example` güncellendi
 - [ ] Kalıcı bir mimari karar alındıysa `docs/decisions/` altına ADR eklendi
 - [ ] Değişim tek bir görevin kapsamında (kapsam kayması yok)
+- [ ] Değişim yaklaşık 400 satır hedefinde; aşıyorsa **Neden** bölümünde bölmeme gerekçesi ve review planı yazıldı

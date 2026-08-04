@@ -1,8 +1,31 @@
 name: CI
 
 on:
+  # ⚠️ `pull_request`'te **dal filtresi yok** ve bu bilinçli. Bu repo'da
+  # yığmak yerleşik desen (PR #7 → #6 → main). `branches: [main]` filtresiyle
+  # yığılmış PR'da test, ruff ve stack tespiti hiç koşmuyordu — görünen tek
+  # yeşil tik `pr-title-ok` oluyordu ve review'a yanlış güven veriyordu.
+  #
+  # `main`'e giren kod açısından delik değildi (yığının tepesi `main`'i
+  # hedefliyor), ama hata yığının dibindeyse üstündeki her PR onu miras alır
+  # ve kimse fark etmez. DW-24'ün WAL yarışı tam böyle üç PR taşındı.
+  #
+  # Bedeli: her yığılmış PR ayrıca CI koşar. İki kişilik ekipte önemsiz.
+  #
+  # ⚠️ `types` **açıkça** yazılmak zorunda. Belirtilmezse GitHub varsayılanı
+  # kullanıyor: `opened`, `synchronize`, `reopened`. Taban dal değişimi
+  # bunların hiçbiri değil — `edited` üretiyor.
+  #
+  # Bu, DW-33'ün (dal filtresi) hemen ardından aynı sınıftan ikinci hata
+  # olarak çıktı. #6 merge edilince GitHub #7'yi otomatik `main`'e çevirdi
+  # ama CI koşmadı; `ci-ok` zorunlu context olduğu için #7 merge edilemez
+  # hâle geldi. Yığın 12 kat ve bu her halkada tekrarlıyordu.
+  #
+  # `edited` başlık/gövde düzenlemesinde de ateşleniyor — birkaç fazladan
+  # koşum. Yukarıdaki gerekçenin aynısı: iki kişilik ekipte önemsiz, ama
+  # yeniden hedeflenen bir PR'ın sessizce kontrolsüz kalması değil.
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -116,6 +139,11 @@ jobs:
         run: |
           pip install ruff
           ruff check .
+          # ⚠️ `ruff check` biçimlendirmeye BAKMIYOR — ayrı bir komut gerekiyor.
+          # Bu eksik ölçüldü: 25 PR'lık zincir main'e indiğinde iki dosyada
+          # biçim kayması vardı ve hepsi CI'dan yeşil geçmişti (DW-73).
+          # "CI yeşil" ile "kod temiz" arasındaki farkın bu repodaki üçüncü örneği.
+          ruff format --check .
 
       - name: Test (pytest)
         run: |
