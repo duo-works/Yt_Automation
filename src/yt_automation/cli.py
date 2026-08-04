@@ -312,6 +312,12 @@ def _trend_guncelle(*, ele: bool, kuru: bool) -> int:
         f"{sonuc.guncellenen} sayfa güncellendi · {sonuc.elendi} 'Elendi' · "
         f"{sonuc.sayfasiz} aday Notion'a hiç yazılmamış (atlandı)"
     )
+    if sonuc.copte:
+        print(
+            f"⚠️ {sonuc.copte} sayfa çöpte — defter Notion'dan ayrışmış. "
+            "Sayfa elle silinmişse aktarım defterindeki bağlantı eskimiştir.",
+            file=sys.stderr,
+        )
     for hata in sonuc.hatalar[:5]:
         print(f"  hata: {hata}", file=sys.stderr)
     return 1 if sonuc.guncellenen == 0 else 0

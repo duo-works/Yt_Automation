@@ -687,3 +687,29 @@ def test_elenen_adaya_kanal_atanmaz(yol: Path, wiki_aday, pazar):
     assert p["Hedef kanal"]["select"] is None
     # Öneri alanı yine dolu: sıralama bilgisi taşıyor, karar taşımıyor.
     assert p["Önerilen format"]["select"]["name"]
+
+
+def test_copteki_sayfa_guncellenmez(yol: Path, wiki_aday, pazar, monkeypatch):
+    """Silinmiş sayfaya PATCH atmak sessiz kayıp — sayılıp raporlanmalı.
+
+    Gerçek vaka (2026-08-04): mükerrer bir sayfa elle silindi ve defter
+    silineni gösteriyordu. Kontrol olmadan istek başarılı döner, kimse
+    görmez, görünen sayfa bir daha hiç güncellenmezdi.
+    """
+    _aktarilmis_kur(yol, wiki_aday, pazar, monkeypatch)
+
+    class CopteSahte(SahteNotion):
+        def __call__(self, yol_, govde, token, *, yontem="POST"):
+            if yontem == "GET":
+                self.cagrilar.append((yontem, yol_, govde))
+                return {"in_trash": True, "archived": True, "properties": {}}
+            return super().__call__(yol_, govde, token, yontem=yontem)
+
+    sahte = CopteSahte()
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    sonuc = notion.bosluklari_guncelle(yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0)
+
+    assert sonuc.copte > 0
+    assert sonuc.guncellenen == 0
+    assert not [y for y, _, _ in sahte.cagrilar if y == "PATCH"], "çöpteki sayfaya yazılmamalı"

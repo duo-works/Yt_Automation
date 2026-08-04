@@ -597,6 +597,7 @@ class GuncellemeSonucu:
     guncellenen: int = 0
     elendi: int = 0
     sayfasiz: int = 0
+    copte: int = 0
     hatalar: list[str] = field(default_factory=list)
 
 
@@ -641,6 +642,15 @@ def bosluklari_guncelle(
             time.sleep(bekleme)
         except NotionHatasi as hata:
             sonuc.hatalar.append(f"{kayit.baslik[:60]}: {hata}")
+            continue
+
+        # ⚠️ Çöpe atılmış sayfaya PATCH atmak sessiz bir kayıp: istek başarılı
+        # döner, kimse görmez ve defter Notion'dan ayrışmış olur. Ölçüldü
+        # (2026-08-04): mükerrer bir sayfa elle silindi, defter silineni
+        # gösteriyordu ve görünen sayfa bir daha hiç güncellenmezdi. Sayılıp
+        # raporlanıyor — defterin tazelenmesi gerektiğinin işareti.
+        if mevcut.get("in_trash") or mevcut.get("archived"):
+            sonuc.copte += 1
             continue
 
         secili = (mevcut.get("properties", {}).get("Durum", {}) or {}).get("select") or {}
