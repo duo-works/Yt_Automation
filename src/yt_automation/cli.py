@@ -193,9 +193,14 @@ def _bosluk_arastir(*, limit: int, kuru: bool) -> int:
         print(f"  yükleme rezervi: {kota.video_basina_maliyet()} birim (dokunulmaz)")
         print(f"  ortak kota: {sayac.ozet()}")
         for aday in adaylar[: max(yapilacak, 1)][:5]:
+            kopru = (
+                f" ← köprü: {aday['kaynak_dil']}"
+                if aday.get("kaynak_dil") and aday["kaynak_dil"] != aday["dil"]
+                else ""
+            )
             print(
                 f"    · [{aday['sinif']}] {aday['dil']}: "
-                f"{aday['baslik'].replace('_', ' ')} ({aday['okunma']:,} okunma)"
+                f"{aday['baslik'].replace('_', ' ')} ({aday['okunma']:,} okunma{kopru})"
                 f' → "{bosluk.sorguya_cevir(aday["baslik"])}"'
             )
         return 0

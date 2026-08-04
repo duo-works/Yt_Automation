@@ -1012,3 +1012,121 @@ def test_format_farki_kucukse_oneri_yok():
         medyan_izlenme_uzun=10_000,
     )
     assert bosluk.onerilen_format(dengeli) is None
+
+
+# --- Hedef pazarlar ve QID köprüsü (DW-53) ----------------------------------
+#
+# Karar (2026-08-03): kanallar EN+ES yayınlayacak; sondaj kotası yalnızca bu
+# pazarlara harcanır. Radar daralmaz — başka dilde yükselen konu Wikidata
+# sitelinks köprüsüyle hedef pazarda sondajlanır.
+
+
+def test_hedef_pazar_disi_dil_kendi_pazarinda_sondajlanmaz(yol: Path, aday):
+    """ar/hi sondajı: DW-51'de ölçülen %34'lük yapısal kayıp buradan kapanıyor."""
+    aday("Q1", "arapca_konu", dil="ar", okunma=90_000)
+
+    kuyruk = bosluk.sondajlanmamis_adaylar(
+        yol, pazarlar=("en", "es"), sitelink_getir=lambda kimlikler, diller: {}
+    )
+    assert kuyruk == [], "sitelink çözülemedi → hiçbir pazara köprülenemez"
+
+
+def test_kopru_yukselen_konuyu_hedef_pazara_tasir(yol: Path, aday):
+    aday("Q1", "Zweiter_Nordischer_Krieg", dil="de", okunma=50_000)
+
+    kuyruk = bosluk.sondajlanmamis_adaylar(
+        yol,
+        pazarlar=("en", "es"),
+        sitelink_getir=lambda kimlikler, diller: {
+            "Q1": {"en": "Second_Northern_War", "es": "Segunda_guerra_del_Norte"}
+        },
+    )
+
+    assert [(a["dil"], a["baslik"]) for a in kuyruk] == [
+        ("en", "Second_Northern_War"),
+        ("es", "Segunda_guerra_del_Norte"),
+    ]
+    assert all(a["kaynak_dil"] == "de" for a in kuyruk), "talep kanıtının izi korunmalı"
+    assert all(a["okunma"] == 50_000 for a in kuyruk)
+
+
+def test_hedef_pazar_adayi_kopru_gerektirmez(yol: Path, aday):
+    """en'de yükselen konu için sitelink çağrısı bile yapılmamalı."""
+    aday("Q1", "Great_Zimbabwe", dil="en", okunma=30_000)
+
+    def patlayan_sitelink(kimlikler, diller):
+        raise AssertionError("hedef pazar adayı için sitelink istendi")
+
+    kuyruk = bosluk.sondajlanmamis_adaylar(
+        yol, pazarlar=("en", "es"), sitelink_getir=patlayan_sitelink
+    )
+    assert [(a["dil"], a["baslik"]) for a in kuyruk] == [("en", "Great_Zimbabwe")]
+
+
+def test_kopru_olculmus_pazari_atlar(yol: Path, aday):
+    """Aynı konu en'de ölçülmüşse köprü yalnızca es'i önerir — tekrar 102 birim."""
+    aday("Q1", "konu", dil="de", okunma=40_000)
+    _olcum_yaz(yol, "Q1", "en", izlenme=5_000)
+
+    kuyruk = bosluk.sondajlanmamis_adaylar(
+        yol,
+        pazarlar=("en", "es"),
+        sitelink_getir=lambda kimlikler, diller: {"Q1": {"en": "Topic", "es": "Tema"}},
+    )
+    assert [(a["dil"], a["baslik"]) for a in kuyruk] == [("es", "Tema")]
+
+
+def test_ayni_konu_iki_dilde_yukselse_pazar_basina_bir_aday(yol: Path, aday):
+    """de ve tr aynı QID'yi yükseltir; en kuyruğunda konu bir kez durmalı."""
+    aday("Q1", "de_baslik", dil="de", okunma=60_000)
+    with depo.yazma_islemi(yol) as baglanti:
+        baglanti.execute(
+            "INSERT OR REPLACE INTO makale (dil, baslik, qid, sinif, sinif_kaynagi, ilk_gorulme)"
+            " VALUES ('tr', 'tr_baslik', 'Q1', 'tarih', 'wikidata', ?)",
+            (SIMDI.isoformat(),),
+        )
+        baglanti.execute(
+            "INSERT OR REPLACE INTO okunma (dil, baslik, gun, okunma, sira)"
+            " VALUES ('tr', 'tr_baslik', '2026-07-28', 20000, 1)"
+        )
+
+    kuyruk = bosluk.sondajlanmamis_adaylar(
+        yol,
+        pazarlar=("en",),
+        sitelink_getir=lambda kimlikler, diller: {"Q1": {"en": "Topic"}},
+    )
+    assert len(kuyruk) == 1
+    assert kuyruk[0]["okunma"] == 60_000, "en yüksek talep kanıtı kazanır"
+
+
+def test_kopru_sondaji_rapora_kaynak_dil_talebiyle_girer(
+    yol: Path, aday, bosluk_sayac, monkeypatch
+):
+    """Uçtan uca: köprü sondajı yazıldıktan sonra raporda görünmeli.
+
+    İki tuzak birden: `bosluklar()` arz satırını `makale(dil, qid)` üzerinden
+    buluyor (köprü makalesi yazılmazsa ölçüm görünmez kalır) ve talep hedef
+    pazarda yoksa kaynak dilden gelmeli (yoksa her köprü adayı RED_TALEP'e
+    takılırdı).
+    """
+    aday("Q9", "Francesca_Scanagatta", dil="de", okunma=12_828)
+    istemci = SahteYT(
+        arama=[("v1", "Francesca Scanagatta Story", "k1")],
+        izlenmeler={"v1": 900},
+        sureler={"v1": 600},
+        aboneler={"k1": 400},
+    )
+
+    monkeypatch.setattr(bosluk, "hedef_pazarlar", lambda: ("en",))
+    monkeypatch.setattr(
+        bosluk.konu,
+        "sitelinkleri_getir",
+        lambda kimlikler, diller: {"Q9": {"en": "Francesca_Scanagatta"}},
+    )
+    sonuc = bosluk.arastir(istemci, bosluk_sayac, yol, limit=5)
+
+    assert sonuc.sondaj == 1
+    kayitlar = bosluk.bosluklar(yol)
+    assert len(kayitlar) == 1, "köprü ölçümü raporda görünmeli (makale satırı yazıldı)"
+    assert kayitlar[0].dil == "en"
+    assert kayitlar[0].talep == 12_828, "talep kanıtı kaynak dilden (de) gelmeli"

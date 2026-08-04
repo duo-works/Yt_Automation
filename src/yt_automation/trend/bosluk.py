@@ -48,6 +48,7 @@ Eşik gevşek (belirteçlerin yarısı) çünkü **hata yönü asimetrik**:
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -57,7 +58,7 @@ from pathlib import Path
 from statistics import median
 
 from .. import depo, kota
-from . import hiz, toplayici
+from . import hiz, konu, toplayici
 
 ARAMA = "search.list"
 ISTATISTIK = "videos.list"
@@ -80,6 +81,22 @@ SONDAJ_MALIYETI = kota.MALIYET[ARAMA] + kota.MALIYET[ISTATISTIK] + kota.MALIYET[
 # sondajlar çartı açlıktan öldürebilirdi.
 SONDAJ_KOTA_TAVANI = 3_000
 SUREC = "bosluk"
+
+# Hedef pazarlar (DW-53): sondaj kotası yalnızca yayın yapılacak pazarlara
+# harcanır. Karar 2026-08-03: kanallar EN+ES yayınlayacak; önceki 6 dilli
+# sondajda bütçenin %34'ü yapısal olarak kazanamayan ar+hi'ye gidiyordu
+# (arz medyanı 200 bin izlenme, talep medyanı 300-700 okunma — ADR-0009'un
+# açık sorusu). Radar ise DARALMIYOR: okunma toplama tüm dillerde sürüyor,
+# başka dilde yükselen konu QID köprüsüyle hedef pazarda sondajlanıyor.
+HEDEF_PAZAR_DEGISKENI = "YT_HEDEF_PAZARLAR"
+VARSAYILAN_HEDEF_PAZARLAR = ("en", "es")
+
+
+def hedef_pazarlar() -> tuple[str, ...]:
+    ham = os.environ.get(HEDEF_PAZAR_DEGISKENI, "")
+    parcalar = tuple(p.strip().lower() for p in ham.split(",") if p.strip())
+    return parcalar or VARSAYILAN_HEDEF_PAZARLAR
+
 
 MAKSIMUM_SONUC = 50  # search.list tek sayfada en fazla bu kadar; maliyet aynı
 
@@ -548,22 +565,44 @@ def olcumu_yaz(yol: Path, olcum: ArzOlcumu) -> None:
 # --- Aday seçimi ---------------------------------------------------------
 
 
-def sondajlanmamis_adaylar(yol: Path, limit: int = 10) -> list[dict]:
-    """Tarih/bilim sınıfında, henüz sondalanmamış, en çok okunan makaleler.
+def sondajlanmamis_adaylar(
+    yol: Path,
+    limit: int = 10,
+    *,
+    pazarlar: tuple[str, ...] | None = None,
+    sitelink_getir=None,
+) -> list[dict]:
+    """Tarih/bilim sınıfında, hedef pazarlarda henüz sondalanmamış adaylar.
 
     `qid` şart: `arz` tablosu qid üzerinden anahtarlanıyor, çünkü aynı konu
     her dilde ayrı makale ama arz ölçümü konuya ait.
 
     Sondalanmış olanı tekrar sormamak huninin en önemli tasarrufu: her tekrar
     102 birim.
+
+    DW-53'ten beri sondaj yalnızca **hedef pazarlarda** yapılıyor; kaynak dili
+    kısıtlanmıyor:
+
+    - Konu hedef pazarda yükseldiyse doğrudan aday — ağ çağrısı yok.
+    - Başka dilde yükseldiyse **QID köprüsü**: Wikidata sitelinks konunun
+      hedef pazardaki başlığını verir (ücretsiz) ve sondaj o pazarda yapılır.
+      "Almanca'da patlayan konu İngilizce yapılır" radar okuması budur.
+      Hedef pazarda makalesi olmayan konu o pazara köprülenmez — arzı ölçecek
+      sorgu bile kurulamaz, atlamak tahmin etmekten iyi.
+
+    `sitelink_getir` testler için enjekte edilebilir; varsayılan canlı
+    Wikidata istemcisi (`konu.sitelinkleri_getir`).
     """
+    pazarlar = pazarlar or hedef_pazarlar()
+    sitelink_getir = sitelink_getir or konu.sitelinkleri_getir
+
     baglanti = depo.baglan(yol)
     try:
         satir = baglanti.execute("SELECT MAX(gun) g FROM okunma").fetchone()
         gun = satir["g"] if satir else None
         if gun is None:
             return []
-        return [
+        yukselenler = [
             dict(s)
             for s in baglanti.execute(
                 """
@@ -573,15 +612,56 @@ def sondajlanmamis_adaylar(yol: Path, limit: int = 10) -> list[dict]:
                 WHERE o.gun = ?
                   AND m.sinif IN ('tarih', 'bilim')
                   AND m.qid IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM arz a WHERE a.qid = m.qid AND a.dil = o.dil)
                 ORDER BY o.okunma DESC
-                LIMIT ?
                 """,
-                (gun, limit),
+                (gun,),
             ).fetchall()
         ]
+        olculmus = {
+            (s["qid"], s["dil"])
+            for s in baglanti.execute(
+                f"SELECT DISTINCT qid, dil FROM arz WHERE dil IN ({','.join('?' * len(pazarlar))})",
+                pazarlar,
+            ).fetchall()
+        }
     finally:
         baglanti.close()
+
+    # Köprü gerektirenlerin sitelinkleri tek toplu çağrıyla çözülür — döngü
+    # içinde çağrı yapmak Wikidata'ya aday başına istek atmak olurdu.
+    kopru_gereken = [a["qid"] for a in yukselenler if a["dil"] not in pazarlar and a["qid"]]
+    sitelinkler = sitelink_getir(sorted(set(kopru_gereken)), pazarlar) if kopru_gereken else {}
+
+    cikti: list[dict] = []
+    gorulen: set[tuple[str, str]] = set()
+    for aday in yukselenler:
+        if len(cikti) >= limit:
+            break
+        if aday["dil"] in pazarlar:
+            hedefler = [(aday["dil"], aday["baslik"])]
+        else:
+            baslikler = sitelinkler.get(aday["qid"], {})
+            hedefler = [(p, baslikler[p]) for p in pazarlar if p in baslikler]
+        for pazar, baslik in hedefler:
+            if len(cikti) >= limit:
+                break
+            anahtar = (aday["qid"], pazar)
+            if anahtar in gorulen or anahtar in olculmus:
+                continue
+            gorulen.add(anahtar)
+            cikti.append(
+                {
+                    "dil": pazar,
+                    "baslik": baslik,
+                    "okunma": aday["okunma"],
+                    "qid": aday["qid"],
+                    "sinif": aday["sinif"],
+                    # Köprü izlenebilirliği: talep kanıtı hangi pazardan geldi.
+                    "kaynak_dil": aday["dil"],
+                    "kaynak_baslik": aday["baslik"],
+                }
+            )
+    return cikti
 
 
 @dataclass
@@ -646,8 +726,38 @@ def arastir(
         if not olcum.gecerli:
             sonuc.gecersiz += 1
         olcumu_yaz(yol, olcum)
+        if aday.get("kaynak_dil") and aday["kaynak_dil"] != aday["dil"]:
+            _kopru_makalesini_yaz(yol, aday)
 
     return sonuc
+
+
+def _kopru_makalesini_yaz(yol: Path, aday: dict) -> None:
+    """Köprülenen konuyu hedef pazarın `makale` defterine işler.
+
+    Şart, süs değil: `bosluklar()` arz satırını `makale` üzerinden `(qid,
+    dil)` ile buluyor. Köprü sondajı hedef pazarda `arz` yazar ama konu o
+    pazarın top-200'ünde hiç görünmediyse `makale` satırı yoktur — ölçüm
+    yazılır ve rapor onu asla göstermezdi: harcanmış 102 birim, görünmez
+    sonuç. Sınıf kaynağı `kopru` ayrı bir değer, `wikidata`/`llm` değil:
+    sınıf buraya kaynak dildeki karardan taşındı, yeniden verilmedi.
+    """
+    with depo.yazma_islemi(yol) as baglanti:
+        baglanti.execute(
+            """
+            INSERT INTO makale (dil, baslik, qid, sinif, sinif_kaynagi, ilk_gorulme)
+            VALUES (?, ?, ?, ?, 'kopru', ?)
+            ON CONFLICT(dil, baslik) DO UPDATE SET
+                qid = COALESCE(excluded.qid, makale.qid)
+            """,
+            (
+                aday["dil"],
+                aday["baslik"],
+                aday["qid"],
+                aday["sinif"],
+                datetime.now(UTC).isoformat(),
+            ),
+        )
 
 
 # --- Rapor ---------------------------------------------------------------
@@ -730,9 +840,18 @@ def bosluklar(yol: Path, *, limit: int | None = None) -> list[Bosluk]:
         satirlar = baglanti.execute(
             """
             SELECT a.*, m.baslik, m.sinif,
-                   (SELECT o.okunma FROM okunma o
-                     WHERE o.dil = a.dil AND o.baslik = m.baslik
-                     ORDER BY o.gun DESC LIMIT 1) AS talep
+                   COALESCE(
+                       (SELECT o.okunma FROM okunma o
+                         WHERE o.dil = a.dil AND o.baslik = m.baslik
+                         ORDER BY o.gun DESC LIMIT 1),
+                       -- Köprü adayı (DW-53): konu hedef pazarda hiç okunma
+                       -- toplamamış olabilir; talep kanıtı kaynak dilden
+                       -- gelir. Zirve okunma alınıyor — "zirve günlük okunma"
+                       -- zaten talebin tanımı.
+                       (SELECT MAX(o.okunma) FROM okunma o
+                         JOIN makale m2 ON m2.dil = o.dil AND m2.baslik = o.baslik
+                         WHERE m2.qid = a.qid)
+                   ) AS talep
             FROM arz a
             JOIN makale m ON m.qid = a.qid AND m.dil = a.dil
             WHERE a.an = (SELECT MAX(b.an) FROM arz b WHERE b.qid = a.qid AND b.dil = a.dil)
