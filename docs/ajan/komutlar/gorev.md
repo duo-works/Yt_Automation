@@ -21,10 +21,18 @@ Kontrol et ve gerekiyorsa uyar:
 ## 3. Branch aç
 
 ```bash
-git switch main
-git pull
-git switch -c <tür>/DW-<numara>-<kisa-aciklama>
+git fetch origin
+git switch -c <tür>/DW-<numara>-<kisa-aciklama> origin/main
 ```
+
+⚠️ `git switch main` **kullanma.** Ekip ayrı çalışma dizinlerinde (git
+worktree) çalışıyor ve bir branch aynı anda yalnızca tek worktree'de checkout
+edilebilir; `main` başka bir dizinde açıksa komut `already checked out` ile
+düşer. Yukarıdaki biçim `main`'i hiç checkout etmeden doğrudan `origin/main`'den
+dallanır ve her iki durumda da çalışır.
+
+Mevcut worktree'de commit edilmemiş değişiklik varsa dal değiştirme — önce
+kullanıcıya sor.
 
 `<tür>` görevin Notion'daki `Tür` alanından türetilir:
 
