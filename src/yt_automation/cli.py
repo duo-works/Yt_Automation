@@ -303,6 +303,38 @@ def _nis_rapor(*, erken: bool, limit: int, asgari: float, pencere: float) -> int
     return 0
 
 
+def _trend_bolgeler(*, adet: int, pencere: int) -> int:
+    """Bölge seçimini ve gerekçesini gösterir. Kota harcamaz.
+
+    Seçim otomatik ama **denetlenebilir** olmalı: "neden TR listede yok"
+    sorusunun cevabı koda bakmadan görülebilmeli.
+    """
+    yol = depo.varsayilan_yol()
+    satirlar = bolge.secim_raporu(yol, adet, pencere_gun=pencere)
+    if not satirlar:
+        print("Veri yok — önce `ytoto trend topla --genis` çalıştırın.")
+        return 1
+
+    secilen = [s for s in satirlar if s["durum"] == "seçildi"]
+    kopya = [s for s in satirlar if s["durum"].startswith("kopya")]
+    print(
+        f"{len(satirlar)} bölge ölçüldü · {len(secilen)} seçildi · "
+        f"{len(kopya)} kopya elendi · son {pencere} gün\n"
+    )
+    for s in satirlar[: adet + len(kopya) + 5]:
+        isaret = "→" if s["durum"] == "seçildi" else " "
+        print(f"  {isaret} {s['bolge']}  {s['adet']:>4} ilgili video  {s['durum']}")
+
+    if kopya:
+        print(
+            f"\nℹ️ {len(kopya)} bölge aynı çartı döndürdüğü için elendi "
+            f"(≥%{bolge.ORTUSME_ESIGI * 100:.0f} örtüşme). Ölçülmüş örnek: "
+            "LI, CH çartının birebir kopyası — ayrı çağrı yeni veri getirmiyor.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def _trend_siniflandir(*, yeniden: bool) -> int:
     """Videoları kategori ve konu etiketiyle sınıflandırır. Hiç çağrı yapmaz."""
     sonuc = video_sinif.uygula(depo.varsayilan_yol(), yeniden=yeniden)
@@ -491,6 +523,17 @@ def main(argv: list[str] | None = None) -> int:
         "--kuru", action="store_true", help="Hiç çağrı yapma, yalnızca maliyeti bildir"
     )
 
+    bolgeler = trend_altlar.add_parser(
+        "bolgeler", help="Derin taramanın bölge seçimini ve gerekçesini göster (ücretsiz)"
+    )
+    bolgeler.add_argument("--adet", type=int, default=bolge.DERIN_BOLGE_SAYISI)
+    bolgeler.add_argument(
+        "--pencere",
+        type=int,
+        default=bolge.SECIM_PENCERESI_GUN,
+        help=f"Kaç günlük geçmişe bakılsın (varsayılan: {bolge.SECIM_PENCERESI_GUN})",
+    )
+
     rapor = trend_altlar.add_parser(
         "rapor", help="Hız, ivme ve yaşa göre normalize sinyaller (kota harcamaz)"
     )
@@ -604,6 +647,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.komut == "trend":
         if args.trend_komutu == "topla":
             return _trend_topla(derin=args.derin, kuru=args.kuru, adet=args.adet)
+        if args.trend_komutu == "bolgeler":
+            return _trend_bolgeler(adet=args.adet, pencere=args.pencere)
         if args.trend_komutu == "siniflandir":
             return _trend_siniflandir(yeniden=args.yeniden)
         if args.trend_komutu == "aktar":
