@@ -43,6 +43,8 @@ MALIYET = {
     "videos.list": 1,
     "channels.list": 1,
     "playlistItems.insert": 50,
+    "videoCategories.list": 1,
+    "i18nRegions.list": 1,
 }
 
 
@@ -111,10 +113,24 @@ class Sayac:
         return f"{self.harcanan}/{self.butce} birim (%{yuzde}), kalan {self.kalan}"
 
 
-def _gun_toplami(baglanti: sqlite3.Connection, gun: str) -> int:
-    satir = baglanti.execute(
-        "SELECT COALESCE(SUM(birim), 0) AS toplam FROM kota_harcama WHERE gun = ?", (gun,)
-    ).fetchone()
+def _gun_toplami(baglanti: sqlite3.Connection, gun: str, surec: str | None = None) -> int:
+    """Bir günün toplam harcaması; `surec` verilirse yalnızca o sürecinki.
+
+    Süreç kırılımı, DW-24'te eklenen `surec` sütununun asıl kazancı: trend
+    hattının kendi günlük tavanını bilmesi gerekiyor. Toplam bütçe ortak
+    olduğu için "kalan"a bakmak yetmez — trend, yükleme için ayrılmış payı
+    yemeden kendi payını bitirmeli.
+    """
+    if surec is None:
+        satir = baglanti.execute(
+            "SELECT COALESCE(SUM(birim), 0) AS toplam FROM kota_harcama WHERE gun = ?", (gun,)
+        ).fetchone()
+    else:
+        satir = baglanti.execute(
+            "SELECT COALESCE(SUM(birim), 0) AS toplam FROM kota_harcama "
+            "WHERE gun = ? AND surec = ?",
+            (gun, surec),
+        ).fetchone()
     return int(satir["toplam"])
 
 
@@ -143,6 +159,19 @@ class KaliciSayac:
         baglanti = depo.baglan(self.yol)
         try:
             return _gun_toplami(baglanti, self.gun)
+        finally:
+            baglanti.close()
+
+    @property
+    def surec_harcamasi(self) -> int:
+        """Bugün **bu sürecin** harcadığı birim.
+
+        Trend hattı buna bakarak kendi günlük tavanında durur; ortak bütçenin
+        kalanına bakmak yeterli değil, çünkü yükleme payını yemeden durmalı.
+        """
+        baglanti = depo.baglan(self.yol)
+        try:
+            return _gun_toplami(baglanti, self.gun, self.surec)
         finally:
             baglanti.close()
 
