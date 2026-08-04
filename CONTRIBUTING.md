@@ -16,6 +16,7 @@ Karışıklığın tek panzehiri, her bilgi türünün tek bir adresi olmasıdı
 | Kalıcı mimari kararlar | **`docs/decisions/` + Notion → Kararlar** | Dağınık not |
 | Sırlar, API anahtarları | Parola yöneticisi | Repo, Notion, commit'lenmiş `.env` |
 | Sprint hedefi, toplantı notu | **Notion** | — |
+| Oturum günlüğü, devir notu, kim neye dokunuyor | **Notion → 📓 Oturum Kaydı** | Repo içi handoff dosyası |
 
 > **Repo kökünde plan/rapor dosyası açmayın.** Uzun form her şey Notion'a gider. Repo'da sadece `README`, `CONTRIBUTING`, `CLAUDE.md` ve `docs/decisions/` altındaki ADR'ler bulunur.
 
@@ -45,6 +46,8 @@ chore/DW-63-bagimlilik-guncelleme
 
 Açıklama kısmı Türkçe, küçük harf, kelimeler tire ile ayrılır, Türkçe karakter kullanılmaz (`ş`→`s`, `ı`→`i`, `ğ`→`g`, `ü`→`u`, `ö`→`o`, `ç`→`c`).
 
+> ⚙️ **CI bunu zorunlu tutar.** `.github/workflows/pr-kurallari.yml` → `branch-adi`. Uymayan branch'in PR'ı kırmızı olur.
+
 ---
 
 ## 3. Commit mesajları
@@ -71,6 +74,10 @@ Notion: DW-42
 
 Kapsam (`(auth)`, `(orders)`) opsiyoneldir ama tavsiye edilir. Gövdeye `Notion: DW-42` satırını ekleyin.
 
+> ⚙️ **CI bunu zorunlu tutar.** `pr-kurallari.yml` → `commit-mesaji`, branch'teki her commit'i tek tek kontrol eder (merge commit'leri hariç).
+>
+> Squash merge nedeniyle bu mesajların ömrü branch kadar — `main`'e giden tek commit'in mesajı PR başlığı ve gövdesinden oluşur. Yine de zorunlu: mesajlar squash gövdesinde toplanıyor ve çalışırken "hangi commit hangi göreve ait" izini koruyor.
+
 ---
 
 ## 4. Pull Request
@@ -86,7 +93,25 @@ feat(auth): e-posta ile giriş akışı [DW-42]
 fix(orders): tarih formatı hatası [DW-57]
 ```
 
-`.github/workflows/pr-title.yml` bu formatı doğrular. Uymayan PR **kırmızı** olur ve merge edilemez.
+`.github/workflows/pr-kurallari.yml` bu formatı doğrular. Uymayan PR **kırmızı** olur ve merge edilemez.
+
+### PR gövdesi
+
+Şablonun ilk bölümü (`## Notion görevi`) doldurulmalı: DW numarası **ve** görevin Notion linki.
+
+> ⚙️ **CI bunu zorunlu tutar.** `pr-kurallari.yml` → `pr-govdesi`. Şablondaki `Link:` satırı yorum olarak bırakılırsa kontrol düşer.
+
+### Hangi kontrol neyi bakar
+
+| Job | Kural |
+|---|---|
+| `baslik` | §4 — PR başlığı formatı |
+| `branch-adi` | §2 — branch adı formatı |
+| `commit-mesaji` | §3 — Conventional Commits + `Notion: DW-<n>` |
+| `pr-govdesi` | §4 — PR gövdesindeki Notion bağı |
+| `ajan-dosyalari` | ADR-0002 — `AGENTS.md` bütünlüğü, `CLAUDE.md` bağı |
+
+Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnızca o adı** zorunlu tutuyor; bu yüzden kapı job'ının adı değiştirilmemeli — değişirse koruma kuralı sessizce devre dışı kalır.
 
 ### Kurallar
 
@@ -100,10 +125,11 @@ fix(orders): tarih formatı hatası [DW-57]
 
 ## 5. Bir görevin baştan sona akışı
 
-1. **Notion** → görevi **Yapılıyor**'a al, kendine ata
+1. **Notion** → görevi **In progress**'e al; `Sorumlu` alanında `Mirza` veya `Ömer` seç. Ortak hesap nedeniyle `Sahip` person alanı ekip kişisini ayıramaz.
 2. `main`'i güncelle, branch aç:
    ```bash
-   git switch main && git pull
+   git switch main
+   git pull
    git switch -c feat/DW-42-kullanici-girisi
    ```
 3. Küçük commit'lerle çalış
@@ -117,21 +143,36 @@ fix(orders): tarih formatı hatası [DW-57]
 7. **Notion** → görevi **Bitti**'ye al
 8. Yerelde temizle:
    ```bash
-   git switch main && git pull && git branch -d feat/DW-42-kullanici-girisi
+   git switch main
+   git pull
+   git branch -d feat/DW-42-kullanici-girisi
    ```
+
+> 💻 **Ekip iki farklı platformda:** macOS/zsh ve Windows/PowerShell 5.1. Dokümanlardaki komutlar bu yüzden **her kabukta çalışacak biçimde** yazılır: komutları `&&` ile zincirlemeyin, ayrı satıra alın (`&&` PowerShell 5.1'de sözdizimi hatası). Karşılığı olmayan bir komut gerekiyorsa (`mkdir -p` gibi) iki blok yazın.
 
 ---
 
 ## 6. Çakışmayı önleyen tek kural
 
-**Bir görev aynı anda tek kişide olur.**
+**Bir görev aynı anda tek kişide olur.** `Sorumlu` alanı mutlaka `Mirza` veya `Ömer` olmalıdır.
 
 İkiniz de aynı dosyaya gireceksiniz diye endişeleniyorsanız, çözüm kod tarafında değil: önce Notion'da görevi bölün. Kod üstünde değil, **görev üstünde** koordine olun.
+
+### AI ajanlarıyla çalışırken
+
+İkiniz de kendi ajanınızla (Claude Code, Codex) aynı repo üzerinde çalışıyorsunuz. Ajanlar birbirini göremez — bu yüzden **Notion → 📓 Oturum Kaydı** zorunludur:
+
+- **Oturum başında** ajan, `Durum = Devam ediyor` olan kayıtları sorgular. Sizin gireceğiniz dosyalar başkasının aktif kaydındaki `Dokunulan alanlar` ile kesişiyorsa ajan **durur** ve size sorar.
+- **Oturum sonunda** ajan kendi kaydını günceller: ne yapıldı, sıradaki adım, durum.
+- Yarım bırakılan iş `Devredildi` olarak işaretlenir; diğerinin ajanı bir sonraki oturumda bunu okur.
+
+Protokolün tam hali [`AGENTS.md`](AGENTS.md) içindedir — Claude Code ve Codex aynı dosyayı okur.
 
 Uzun süren bir branch'te çalışıyorsanız günde bir kez `main`'i içine alın:
 
 ```bash
-git switch main && git pull
+git switch main
+git pull
 git switch feat/DW-42-kullanici-girisi
 git merge main
 ```
