@@ -22,7 +22,7 @@ from datetime import date
 from pathlib import Path
 
 from . import __version__, depo, kanal, kota
-from .trend import bolge, konu_toplayici, toplayici, wikipedia
+from .trend import bolge, konu_toplayici, siniflandirici, toplayici, wikipedia
 from .video import MetadataHatasi, kuyrugu_oku
 
 ANAHTAR_DEGISKENI = "YOUTUBE_API_KEY"
@@ -137,6 +137,39 @@ def _konu_listele(*, limit: int) -> int:
     return 0
 
 
+def _konu_siniflandir(*, limit: int, kuru: bool) -> int:
+    """Wikidata'nın karar veremediği kuyruğu LLM'e sorar. YouTube kotası harcamaz."""
+    yol = depo.varsayilan_yol()
+    kuyruk = siniflandirici.bekleyenler(yol, limit)
+
+    if kuru:
+        grup = -(-len(kuyruk) // siniflandirici.GRUP_BOYUTU)  # tavana yuvarla
+        print("KURU KOŞUM — sınıflandırma")
+        print(f"  {len(kuyruk)} makale × {siniflandirici.GRUP_BOYUTU}'lik gruplar = {grup} çağrı")
+        print(f"  model: {siniflandirici.MODEL}")
+        for k in kuyruk[:5]:
+            print(f"    · [{k['dil']}] {k['baslik'].replace('_', ' ')} ({k['okunma']:,} okunma)")
+        if len(kuyruk) > 5:
+            print(f"    … {len(kuyruk) - 5} makale daha")
+        return 0
+
+    if not kuyruk:
+        print("Belirsiz makale yok — sınıflandırılacak bir şey kalmamış.")
+        return 0
+
+    try:
+        istemci = siniflandirici.istemci_kur()
+    except siniflandirici.SiniflandirmaHatasi as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    sonuc = siniflandirici.siniflandir(istemci, yol, limit=limit)
+    print(sonuc.ozet())
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    return 1 if sonuc.cagri_sayisi == 0 else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ayristirici = argparse.ArgumentParser(
         prog="ytoto",
@@ -186,6 +219,12 @@ def main(argv: list[str] | None = None) -> int:
     kl = konu_altlar.add_parser("listele", help="Tarih/bilim adaylarını sıralı göster")
     kl.add_argument("--limit", type=int, default=40)
 
+    ks = konu_altlar.add_parser(
+        "siniflandir", help="Belirsiz kalan makaleleri LLM'e sor (YouTube kotası harcamaz)"
+    )
+    ks.add_argument("--limit", type=int, default=200, help="En fazla kaç makale sorulsun")
+    ks.add_argument("--kuru", action="store_true", help="Hiç çağrı yapma, yalnızca kuyruğu bildir")
+
     args = ayristirici.parse_args(argv)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
@@ -196,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
             return _konu_topla(diller=args.diller, gun=args.gun, adet=args.adet)
         if args.konu_komutu == "listele":
             return _konu_listele(limit=args.limit)
+        if args.konu_komutu == "siniflandir":
+            return _konu_siniflandir(limit=args.limit, kuru=args.kuru)
     return 1
 
 
