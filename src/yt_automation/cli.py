@@ -29,8 +29,10 @@ from .trend import (
     kaynak,
     konu_toplayici,
     nis,
+    notion,
     siniflandirici,
     toplayici,
+    video_sinif,
     wikipedia,
 )
 from .video import MetadataHatasi, kuyrugu_oku
@@ -301,6 +303,77 @@ def _nis_rapor(*, erken: bool, limit: int, asgari: float, pencere: float) -> int
     return 0
 
 
+def _trend_siniflandir(*, yeniden: bool) -> int:
+    """Videoları kategori ve konu etiketiyle sınıflandırır. Hiç çağrı yapmaz."""
+    sonuc = video_sinif.uygula(depo.varsayilan_yol(), yeniden=yeniden)
+    print(sonuc.ozet())
+    ilgili = sonuc.siniflar.get("tarih", 0) + sonuc.siniflar.get("bilim", 0)
+    if sonuc.islenen and ilgili == 0:
+        print(
+            "\nℹ️ Hiç tarih/bilim videosu çıkmadı. Bu beklenen: çartta bu etiketler "
+            "pratikte yok (4.905 videoda en yakın etiket 'Knowledge', 19 kez). "
+            "Aday üretimi `ytoto konu topla` üzerinden yürüyor.",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def _trend_aktar(*, adet: int, kuru: bool, zorla: bool, kaynak_turu: str) -> int:
+    """Günlük ilk-N adayı Notion'a yazar — Ömer'e devir noktası.
+
+    Varsayılan kaynak **wikipedia**, çart değil. Sebebi ölçülmüş: 4.905 çart
+    videosunda sıfır tarih, 19 bilim ve o 19'un hepsi yazılım dersi / cihaz
+    incelemesi. Huninin gerçekten ürettiği aday listesi Wikipedia tarafında.
+    """
+    yol = depo.varsayilan_yol()
+    wiki = kaynak_turu == "wikipedia"
+
+    adaylar = (
+        notion.aktarilmamis_bosluklar(yol, adet=adet, zorla=zorla)
+        if wiki
+        else notion.aktarilmamis_adaylar(yol, adet=adet, zorla=zorla)
+    )
+
+    if not adaylar:
+        if wiki:
+            print(
+                "Aktarılacak aday yok. Sırayla: `ytoto konu topla` (aday üret), "
+                "`ytoto bosluk arastir` (arzı ölç), `ytoto konu kaynak` (dosyayı çek). "
+                "Hepsi aktarılmışsa `--zorla` ile tekrar gönderin."
+            )
+        else:
+            print(
+                "Aktarılacak çart videosu yok. Sırayla: `ytoto trend topla`, "
+                "`ytoto trend siniflandir`. Hepsi aktarılmışsa `--zorla` kullanın."
+            )
+        return 1
+
+    if kuru:
+        print(f"KURU KOŞUM — Notion aktarımı · kaynak: {kaynak_turu} · {len(adaylar)} aday")
+        print("  YouTube kotası harcanmıyor; Notion yazma tarafı da kotasız.\n")
+        for aday in adaylar:
+            print(f"  {aday.satir()}")
+        return 0
+
+    try:
+        token, database = notion.token_al(), notion.database_al()
+    except notion.NotionHatasi as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    sonuc = (
+        notion.bosluklari_aktar(yol, adaylar=adaylar, database=database, token=token)
+        if wiki
+        else notion.aktar(yol, adaylar=adaylar, database=database, token=token)
+    )
+    print(sonuc.ozet())
+    for url in sonuc.sayfalar[:5]:
+        print(f"  {url}")
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    return 1 if sonuc.yazilan == 0 else 0
+
+
 def _konu_topla(*, diller: str, gun: str | None, adet: int) -> int:
     """Wikipedia okunma sıçramaları — kota harcamaz, anahtar istemez."""
     yol = depo.varsayilan_yol()
@@ -431,6 +504,35 @@ def main(argv: list[str] | None = None) -> int:
     )
     rapor.add_argument("--limit", type=int, default=25, help="Kaç satır basılsın")
 
+    tsinif = trend_altlar.add_parser(
+        "siniflandir", help="Videoları kategori ve konu etiketiyle sınıflandır (ücretsiz)"
+    )
+    tsinif.add_argument(
+        "--yeniden",
+        action="store_true",
+        help="Daha önce sınıflandırılmışları da yeniden hesapla (LLM kararları korunur)",
+    )
+
+    aktar = trend_altlar.add_parser(
+        "aktar", help="Günlük ilk-N adayı Notion'a yaz (YouTube kotası harcamaz)"
+    )
+    aktar.add_argument(
+        "--adet",
+        type=int,
+        default=notion.VARSAYILAN_ADET,
+        help=f"Kaç aday aktarılsın (varsayılan: {notion.VARSAYILAN_ADET})",
+    )
+    aktar.add_argument(
+        "--kaynak",
+        default="wikipedia",
+        choices=("wikipedia", "youtube-chart"),
+        help="Hangi aday kümesi aktarılsın (varsayılan: wikipedia — çartta tarih/bilim yok)",
+    )
+    aktar.add_argument("--kuru", action="store_true", help="Hiç yazma, ne gideceğini göster")
+    aktar.add_argument(
+        "--zorla", action="store_true", help="Daha önce aktarılmış adayları da gönder"
+    )
+
     bosluk_ay = altlar.add_parser("bosluk", help="Talep-arz boşluğu sondajı ve skorlaması")
     bosluk_altlar = bosluk_ay.add_subparsers(dest="bosluk_komutu", required=True)
 
@@ -502,6 +604,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.komut == "trend":
         if args.trend_komutu == "topla":
             return _trend_topla(derin=args.derin, kuru=args.kuru, adet=args.adet)
+        if args.trend_komutu == "siniflandir":
+            return _trend_siniflandir(yeniden=args.yeniden)
+        if args.trend_komutu == "aktar":
+            return _trend_aktar(
+                adet=args.adet, kuru=args.kuru, zorla=args.zorla, kaynak_turu=args.kaynak
+            )
         if args.trend_komutu == "rapor":
             return _trend_rapor(
                 bolge_kodu=args.bolge,
