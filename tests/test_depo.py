@@ -127,3 +127,61 @@ def test_wal_zaten_kuruluyken_gecis_denenmiyor(tmp_path: Path):
         sqlite3.connect = gercek_connect
 
     assert denenen == [], f"WAL zaten kuruluyken geçiş denendi: {denenen}"
+
+
+# --- Şema geçişleri (DW-52) ------------------------------------------------
+
+
+def test_gecis_eski_veritabanina_kirilim_kolonlarini_ekler(tmp_path: Path):
+    """v6 → v7: `CREATE TABLE IF NOT EXISTS` var olan tabloya kolon ekleyemez;
+    geçiş katmanı ekler. Eski satırlar NULL kalır — "kırılım ölçülmedi",
+    sıfır değil."""
+    yol = tmp_path / "eski.db"
+    baglanti = sqlite3.connect(yol)
+    # DW-52 öncesi arz tablosunun gerçek şekli (depo.py v6'dan)
+    baglanti.execute(
+        """
+        CREATE TABLE arz (
+            qid TEXT NOT NULL, dil TEXT NOT NULL, an TEXT NOT NULL,
+            sorgu TEXT NOT NULL, donen INTEGER NOT NULL, alakali INTEGER NOT NULL,
+            medyan_izlenme INTEGER, ust_izlenme INTEGER, medyan_yas_gun INTEGER,
+            medyan_abone INTEGER, harcanan INTEGER NOT NULL,
+            PRIMARY KEY (qid, dil, an)
+        )
+        """
+    )
+    baglanti.execute("INSERT INTO arz VALUES ('Q','en','t','s',50,10,100,200,30,400,102)")
+    baglanti.execute("PRAGMA user_version = 6")
+    baglanti.commit()
+    baglanti.close()
+
+    b = depo.baglan(yol)
+    try:
+        kolonlar = {s[1] for s in b.execute("PRAGMA table_info(arz)")}
+        assert {
+            "alakali_shorts",
+            "medyan_izlenme_shorts",
+            "alakali_uzun",
+            "medyan_izlenme_uzun",
+        } <= kolonlar
+        assert b.execute("SELECT alakali_shorts FROM arz").fetchone()[0] is None
+        assert b.execute("PRAGMA user_version").fetchone()[0] == depo.SEMA_SURUMU
+    finally:
+        b.close()
+
+    # İkinci bağlanma idempotent: geçiş bir daha koşmaz, koşsa da düşmez.
+    depo.baglan(yol).close()
+
+
+def test_sifirdan_kurulum_gecis_gerektirmez(tmp_path: Path):
+    """Yeni dosyada kolonlar SEMA'dan gelir; ALTER hiç denenmemeli (sürüm 0
+    "hiç kurulmamış" demek). Deneseydi "duplicate column" yutulurdu ama bunu
+    davranışa değil tesadüfe borçlu olmak istemiyoruz."""
+    yol = tmp_path / "yeni.db"
+    b = depo.baglan(yol)
+    try:
+        kolonlar = {s[1] for s in b.execute("PRAGMA table_info(arz)")}
+        assert "alakali_shorts" in kolonlar
+        assert b.execute("PRAGMA user_version").fetchone()[0] == depo.SEMA_SURUMU
+    finally:
+        b.close()

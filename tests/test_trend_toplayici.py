@@ -170,7 +170,7 @@ def test_maliyet_tahmini_sayfalama_varsaymaz():
     ],
 )
 def test_sure_ayristirma(iso, beklenen):
-    assert toplayici._sure_saniye(iso) == beklenen
+    assert toplayici.sure_saniye(iso) == beklenen
 
 
 def test_eksik_istatistik_cokmez(yol: Path, sayac, sahte_istemci, video_ogesi, satirlar):

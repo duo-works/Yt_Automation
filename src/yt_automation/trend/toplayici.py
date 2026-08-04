@@ -56,11 +56,14 @@ class KosuSonucu:
         return satir
 
 
-def _sure_saniye(iso_sure: str | None) -> int | None:
+def sure_saniye(iso_sure: str | None) -> int | None:
     """ISO 8601 süresini (`PT4M13S`) saniyeye çevirir.
 
     `contentDetails.duration` bu biçimde geliyor. Canlı yayınlarda `P0D`
     olabiliyor; o durumda 0 döner ve bilgi kaybı olmaz.
+
+    Adı kamusal (DW-52): arz sondajı (`bosluk`) ve niş izleme (`nis`) de aynı
+    alanı ayrıştırıyor — üç kopya yerine tek tanım.
     """
     if not iso_sure or not iso_sure.startswith("P"):
         return None
@@ -108,7 +111,10 @@ def _videoyu_yaz(baglanti, oge: dict, simdi: str) -> str:
         ON CONFLICT(video_id) DO UPDATE SET
             baslik      = excluded.baslik,
             kanal_adi   = excluded.kanal_adi,
-            kategori_id = COALESCE(excluded.kategori_id, video.kategori_id)
+            kategori_id = COALESCE(excluded.kategori_id, video.kategori_id),
+            -- Video önce süresiz bir yoldan girmiş olabilir (DW-52'ye kadar
+            -- niş hattı süre yazmıyordu); tazelememek NULL'u kalıcılaştırır.
+            sure_sn     = COALESCE(excluded.sure_sn, video.sure_sn)
         """,
         (
             video_id,
@@ -117,7 +123,7 @@ def _videoyu_yaz(baglanti, oge: dict, simdi: str) -> str:
             snippet.get("channelTitle"),
             snippet.get("publishedAt"),
             kategori,
-            _sure_saniye(icerik.get("duration")),
+            sure_saniye(icerik.get("duration")),
             json.dumps(konu, ensure_ascii=False) if konu else None,
             simdi,
         ),

@@ -57,7 +57,7 @@ from pathlib import Path
 from statistics import median
 
 from .. import depo, kota
-from . import hiz
+from . import hiz, toplayici
 
 ARAMA = "search.list"
 ISTATISTIK = "videos.list"
@@ -82,6 +82,13 @@ SONDAJ_KOTA_TAVANI = 3_000
 SUREC = "bosluk"
 
 MAKSIMUM_SONUC = 50  # search.list tek sayfada en fazla bu kadar; maliyet aynı
+
+# Shorts sınırı (DW-52). YouTube 2024'ten beri 3 dakikaya kadar dikey videoyu
+# Shorts sayıyor; eski 60 sn tanımı artık yanlış. Süreden dikeylik okunamıyor
+# ama ≤ 180 sn'lik içerik pratikte Shorts rafında yarışıyor — kırılım bunun
+# üstüne kurulu. İki kanal (uzun + Shorts) hangi boşluğa hangi formatla
+# gireceğini bu ayrımdan öğreniyor.
+SHORTS_SINIRI_SN = 180
 
 # Belirteç örtüşme eşiği ve anlamsız belirteç uzunluğu. 4 karakterden kısa
 # olanlar atılıyor: "of", "the", "ve", "de", "bir" gibi işlev sözcükleri her
@@ -246,6 +253,13 @@ class ArzOlcumu:
     medyan_yas_gun: int | None = None
     medyan_abone: int | None = None
     harcanan: int = 0
+    # Format kırılımı (DW-52): alakalı sonuçların Shorts (≤ SHORTS_SINIRI_SN)
+    # ve uzun tarafı ayrı sayılıp ayrı medyanlanıyor. NULL = bu sondaj
+    # kırılımsız yapıldı (eski kayıt), sıfır değil.
+    alakali_shorts: int | None = None
+    medyan_izlenme_shorts: int | None = None
+    alakali_uzun: int | None = None
+    medyan_izlenme_uzun: int | None = None
 
     @property
     def gecerli(self) -> bool:
@@ -267,6 +281,14 @@ class ArzOlcumu:
             parcalar.append(f"medyan yaş {self.medyan_yas_gun:,} gün")
         if self.medyan_abone is not None:
             parcalar.append(f"medyan {self.medyan_abone:,} abone")
+        if self.alakali_shorts is not None and self.alakali_uzun is not None:
+            shorts = f"{self.alakali_shorts} shorts"
+            if self.medyan_izlenme_shorts is not None:
+                shorts += f" ({self.medyan_izlenme_shorts:,} medyan)"
+            uzun = f"{self.alakali_uzun} uzun"
+            if self.medyan_izlenme_uzun is not None:
+                uzun += f" ({self.medyan_izlenme_uzun:,} medyan)"
+            parcalar.append(f"{shorts} / {uzun}")
         return " · ".join(parcalar)
 
 
@@ -309,6 +331,29 @@ def skorla(olcum: ArzOlcumu, talep: int) -> float | None:
     return talep_puani - arz
 
 
+def onerilen_format(olcum: ArzOlcumu) -> str | None:
+    """Hangi formatın arz tarafı daha boş: `"shorts"`, `"uzun"` ya da `None`.
+
+    Karar tek eksende: alakalı sonuç sayısı + medyan izlenme, format başına
+    log ölçekte toplanıyor (skorun arz tarafıyla aynı dil) ve düşük olan —
+    yani arzı zayıf olan — öneriliyor. Talep iki format için de aynı konu,
+    o yüzden kıyasa girmiyor.
+
+    `None` iki durumda: kırılım hiç ölçülmedi (eski sondaj — tahmin üretmek
+    yanlış öneri yazmak olur) ya da iki taraf ayırt edilemeyecek kadar yakın
+    (< 0,3 puan ≈ 2 kat fark; gürültüden öneri türetilmez, karar insanda).
+    """
+    if olcum.alakali_shorts is None or olcum.alakali_uzun is None:
+        return None
+    shorts = ALAKALI_SAYI_AGIRLIGI * log10(1 + olcum.alakali_shorts)
+    shorts += IZLENME_AGIRLIGI * log10(1 + (olcum.medyan_izlenme_shorts or 0))
+    uzun = ALAKALI_SAYI_AGIRLIGI * log10(1 + olcum.alakali_uzun)
+    uzun += IZLENME_AGIRLIGI * log10(1 + (olcum.medyan_izlenme_uzun or 0))
+    if abs(shorts - uzun) < 0.3:
+        return None
+    return "shorts" if shorts < uzun else "uzun"
+
+
 # --- Sondaj --------------------------------------------------------------
 
 
@@ -333,9 +378,15 @@ def _ara(istemci, sorgu: str, dil: str) -> list[dict]:
 
 
 def _istatistikleri_getir(istemci, video_kimlikleri: list[str]) -> dict[str, dict]:
-    """`videos.list` — 50 kimliğe kadar tek çağrı, 1 birim."""
+    """`videos.list` — 50 kimliğe kadar tek çağrı, 1 birim.
+
+    `contentDetails` süre için (DW-52, format kırılımı). videos.list'in
+    maliyeti part sayısından bağımsız — kırılım kotasız geliyor.
+    """
     yanit = (
-        istemci.videos().list(part="snippet,statistics", id=",".join(video_kimlikleri)).execute()
+        istemci.videos()
+        .list(part="snippet,statistics,contentDetails", id=",".join(video_kimlikleri))
+        .execute()
     )
     return {oge["id"]: oge for oge in yanit.get("items", [])}
 
@@ -403,6 +454,10 @@ def sondala(
     izlenmeler: list[int] = []
     yaslar: list[int] = []
     kanallar: list[str] = []
+    shorts_izlenmeler: list[int] = []
+    uzun_izlenmeler: list[int] = []
+    sayilan_shorts = 0
+    sayilan_uzun = 0
     for ayrinti in ayrintilar.values():
         snippet = ayrinti.get("snippet") or {}
         izlenme = _tam_sayi((ayrinti.get("statistics") or {}).get("viewCount"))
@@ -413,10 +468,27 @@ def sondala(
             yaslar.append(max((an - yayin).days, 0))
         if kanal_id := snippet.get("channelId"):
             kanallar.append(kanal_id)
+        # Format kırılımı: süresi okunamayan video hiçbir tarafa yazılmıyor —
+        # tahminle Shorts saymak, kırılımı ölçüm olmaktan çıkarırdı.
+        sure = toplayici.sure_saniye((ayrinti.get("contentDetails") or {}).get("duration"))
+        if sure is None:
+            continue
+        if sure <= SHORTS_SINIRI_SN:
+            sayilan_shorts += 1
+            if izlenme is not None:
+                shorts_izlenmeler.append(izlenme)
+        else:
+            sayilan_uzun += 1
+            if izlenme is not None:
+                uzun_izlenmeler.append(izlenme)
 
     olcum.medyan_izlenme = _medyan(izlenmeler)
     olcum.ust_izlenme = max(izlenmeler) if izlenmeler else None
     olcum.medyan_yas_gun = _medyan(yaslar)
+    olcum.alakali_shorts = sayilan_shorts
+    olcum.medyan_izlenme_shorts = _medyan(shorts_izlenmeler)
+    olcum.alakali_uzun = sayilan_uzun
+    olcum.medyan_izlenme_uzun = _medyan(uzun_izlenmeler)
 
     if kanallar:
         sayac.harca(KANAL, rezerve=rezerve)
@@ -436,8 +508,10 @@ def olcumu_yaz(yol: Path, olcum: ArzOlcumu) -> None:
         baglanti.execute(
             """
             INSERT INTO arz (qid, dil, an, sorgu, donen, alakali, medyan_izlenme,
-                             ust_izlenme, medyan_yas_gun, medyan_abone, harcanan)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             ust_izlenme, medyan_yas_gun, medyan_abone, harcanan,
+                             alakali_shorts, medyan_izlenme_shorts,
+                             alakali_uzun, medyan_izlenme_uzun)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(qid, dil, an) DO UPDATE SET
                 donen          = excluded.donen,
                 alakali        = excluded.alakali,
@@ -445,7 +519,11 @@ def olcumu_yaz(yol: Path, olcum: ArzOlcumu) -> None:
                 ust_izlenme    = excluded.ust_izlenme,
                 medyan_yas_gun = excluded.medyan_yas_gun,
                 medyan_abone   = excluded.medyan_abone,
-                harcanan       = excluded.harcanan
+                harcanan       = excluded.harcanan,
+                alakali_shorts        = excluded.alakali_shorts,
+                medyan_izlenme_shorts = excluded.medyan_izlenme_shorts,
+                alakali_uzun          = excluded.alakali_uzun,
+                medyan_izlenme_uzun   = excluded.medyan_izlenme_uzun
             """,
             (
                 olcum.qid,
@@ -459,6 +537,10 @@ def olcumu_yaz(yol: Path, olcum: ArzOlcumu) -> None:
                 olcum.medyan_yas_gun,
                 olcum.medyan_abone,
                 olcum.harcanan,
+                olcum.alakali_shorts,
+                olcum.medyan_izlenme_shorts,
+                olcum.alakali_uzun,
+                olcum.medyan_izlenme_uzun,
             ),
         )
 
@@ -586,14 +668,20 @@ class Bosluk:
     # örneklemi yetmiyorsa `None` — "kötü" değil, **bilinmiyor**.
     kalibre: float | None = None
 
+    @property
+    def onerilen_format(self) -> str | None:
+        return onerilen_format(self.olcum)
+
     def satir(self) -> str:
         baslik = self.baslik.replace("_", " ")
         skor = "—" if self.skor is None else f"{self.skor:+.2f}"
         kal = "—" if self.kalibre is None else f"{self.kalibre:+.2f}"
         etiket = f"[{self.sinif}] " if self.sinif else ""
+        oneri = self.onerilen_format
+        format_eki = f" · öneri: {oneri}" if oneri else ""
         return (
             f"{kal:>6} MAD (ham {skor})  {etiket}{self.dil}: {baslik}\n"
-            f"           talep {self.talep:,} okunma · arz: {self.olcum.ozet()}"
+            f"           talep {self.talep:,} okunma · arz: {self.olcum.ozet()}{format_eki}"
         )
 
 
@@ -667,6 +755,10 @@ def bosluklar(yol: Path, *, limit: int | None = None) -> list[Bosluk]:
             medyan_yas_gun=s["medyan_yas_gun"],
             medyan_abone=s["medyan_abone"],
             harcanan=s["harcanan"],
+            alakali_shorts=s["alakali_shorts"],
+            medyan_izlenme_shorts=s["medyan_izlenme_shorts"],
+            alakali_uzun=s["alakali_uzun"],
+            medyan_izlenme_uzun=s["medyan_izlenme_uzun"],
         )
         talep = s["talep"] or 0
         cikti.append(

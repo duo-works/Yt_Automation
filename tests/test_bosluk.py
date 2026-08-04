@@ -22,12 +22,16 @@ class SahteYT:
     `izlenmeler`: `video_id → izlenme` (yok = istatistik gizli).
     `yaslar`: `video_id → gün` (son andan geriye).
     `aboneler`: `kanal_id → abone` (`None` = gizlenmiş).
+    `sureler`: `video_id → saniye` (yok = contentDetails.duration hiç gelmiyor).
     """
 
-    def __init__(self, *, arama=(), izlenmeler=None, yaslar=None, aboneler=None, hatalar=None):
+    def __init__(
+        self, *, arama=(), izlenmeler=None, yaslar=None, aboneler=None, hatalar=None, sureler=None
+    ):
         self.arama = list(arama)
         self.izlenmeler = izlenmeler or {}
         self.yaslar = yaslar or {}
+        self.sureler = sureler or {}
         self.aboneler = aboneler or {}
         self.hatalar = hatalar or {}
         self.cagrilar: list[str] = []
@@ -81,6 +85,9 @@ class SahteYT:
                 }
                 if vid in self.izlenmeler:
                     oge["statistics"]["viewCount"] = str(self.izlenmeler[vid])
+                if vid in self.sureler:
+                    sn = self.sureler[vid]
+                    oge["contentDetails"] = {"duration": f"PT{sn // 60}M{sn % 60}S"}
                 ogeler.append(oge)
             return {"items": ogeler}
         istenen = self._p["id"].split(",")
@@ -884,3 +891,124 @@ def test_gonderilmis_aday_kapi_elemesi_gibi_raporlanmaz(yol: Path, aday, monkeyp
     assert kod == 1, "yeni ölçüm gerekiyor — bilerek boş geçilen bir gün değil"
     assert "kapıları geçmedi" not in cikti, "kapı elemesiyle karıştırılmamalı"
     assert "--zorla" in cikti
+
+
+# --- Format kırılımı (DW-52) ----------------------------------------------
+#
+# İki kanal (uzun + Shorts) hangi boşluğa hangi formatla gireceğini bu
+# kırılımdan öğreniyor. Kırılım videos.list'in zaten istenen yanıtından
+# geliyor — 0 ekstra kota; testler de bunu doğruluyor (çağrı sayısı değişmez).
+
+
+def test_sondaj_format_kirilimini_olcer(yol: Path, aday, bosluk_sayac):
+    aday("Q1", "Cleopatra")
+    istemci = SahteYT(
+        arama=[
+            ("kisa1", "Cleopatra Shorts", "k1"),
+            ("kisa2", "Cleopatra in 60s", "k1"),
+            ("uzun1", "Cleopatra Documentary", "k2"),
+        ],
+        izlenmeler={"kisa1": 1_000, "kisa2": 3_000, "uzun1": 200_000},
+        sureler={"kisa1": 45, "kisa2": 180, "uzun1": 1_800},
+        aboneler={"k1": 5_000, "k2": 900_000},
+    )
+    olcum = bosluk.sondala(istemci, bosluk_sayac, qid="Q1", dil="en", baslik="Cleopatra", an=SIMDI)
+
+    assert istemci.cagrilar == ["search", "videos", "channels"], "kırılım ek çağrı istemez"
+    assert olcum.alakali_shorts == 2, "180 sn sınır dahil — Shorts"
+    assert olcum.alakali_uzun == 1
+    assert olcum.medyan_izlenme_shorts == 2_000
+    assert olcum.medyan_izlenme_uzun == 200_000
+
+
+def test_suresi_okunamayan_video_kirilima_girmez(yol: Path, aday, bosluk_sayac):
+    """Tahminle Shorts saymak kırılımı ölçüm olmaktan çıkarır."""
+    aday("Q1", "Cleopatra")
+    istemci = SahteYT(
+        arama=[("v1", "Cleopatra Story", "k1"), ("v2", "Cleopatra Facts", "k1")],
+        izlenmeler={"v1": 500, "v2": 700},
+        sureler={"v1": 90},  # v2'nin süresi yok
+        aboneler={"k1": 1_000},
+    )
+    olcum = bosluk.sondala(istemci, bosluk_sayac, qid="Q1", dil="en", baslik="Cleopatra", an=SIMDI)
+
+    assert olcum.alakali == 2, "alaka ölçümü süreden bağımsız"
+    assert olcum.alakali_shorts == 1
+    assert olcum.alakali_uzun == 0
+    assert olcum.medyan_izlenme_uzun is None
+
+
+def test_kirilim_diske_yazilir_ve_geri_okunur(yol: Path, aday, bosluk_sayac):
+    aday("Q1", "Cleopatra", okunma=50_000)
+    istemci = SahteYT(
+        arama=[("kisa", "Cleopatra Short", "k1"), ("uzun", "Cleopatra Film", "k2")],
+        izlenmeler={"kisa": 400, "uzun": 90_000},
+        sureler={"kisa": 30, "uzun": 3_600},
+        aboneler={"k1": 200, "k2": 50_000},
+    )
+    bosluk.olcumu_yaz(
+        yol, bosluk.sondala(istemci, bosluk_sayac, qid="Q1", dil="en", baslik="Cleopatra", an=SIMDI)
+    )
+
+    kayit = bosluk.bosluklar(yol)[0]
+    assert kayit.olcum.alakali_shorts == 1
+    assert kayit.olcum.medyan_izlenme_uzun == 90_000
+    assert "shorts" in kayit.olcum.ozet()
+
+
+def test_eski_olcum_format_onerisi_uretmez(yol: Path, aday):
+    """Kırılımsız (DW-52 öncesi) kayıt öneriye dönüşmemeli — NULL ≠ sıfır."""
+    _olcum_yaz(yol, "Q1", "en", izlenme=5_000)
+    aday("Q1", "Eski_Kayit")
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "Q1")
+    assert kayit.olcum.alakali_shorts is None
+    assert kayit.onerilen_format is None
+
+
+def test_format_onerisi_bos_tarafi_secer():
+    """Uzun taraf doymuş, Shorts bomboş → öneri shorts (ve tersi)."""
+    doymus_uzun = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=40,
+        alakali_shorts=2,
+        medyan_izlenme_shorts=800,
+        alakali_uzun=38,
+        medyan_izlenme_uzun=900_000,
+    )
+    assert bosluk.onerilen_format(doymus_uzun) == "shorts"
+
+    doymus_shorts = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=40,
+        alakali_shorts=35,
+        medyan_izlenme_shorts=500_000,
+        alakali_uzun=3,
+        medyan_izlenme_uzun=1_200,
+    )
+    assert bosluk.onerilen_format(doymus_shorts) == "uzun"
+
+
+def test_format_farki_kucukse_oneri_yok():
+    """İki taraf başa başsa gürültüden öneri türetilmez — karar insanda."""
+    dengeli = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=20,
+        alakali_shorts=10,
+        medyan_izlenme_shorts=10_000,
+        alakali_uzun=10,
+        medyan_izlenme_uzun=10_000,
+    )
+    assert bosluk.onerilen_format(dengeli) is None
