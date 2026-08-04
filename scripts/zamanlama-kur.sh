@@ -1,50 +1,190 @@
 #!/bin/bash
-# Saatlik trend taramasını `launchd`'a kurar, durumunu gösterir ya da kaldırır.
+# Saatlik trend taramasını `launchd`'a kurar, tazeler, durumunu gösterir ya da
+# kaldırır.
 #
-#   scripts/zamanlama-kur.sh kur
+#   scripts/zamanlama-kur.sh kur [--ref <ref>]
+#   scripts/zamanlama-kur.sh tazele [--ref <ref>]
 #   scripts/zamanlama-kur.sh durum
 #   scripts/zamanlama-kur.sh kaldir
 #
 # ⚠️ Yalnızca macOS. Ömer Windows'ta çalışıyor; oradaki karşılığı Görev
 # Zamanlayıcı ve henüz yazılmadı — ihtiyaç doğduğunda ayrı görev açılacak.
 # Trend hattı Mirza'nın makinesinde çalıştığı için bu bir engel değil.
+#
+# ⚠️ Zamanlanmış iş geliştirme ağacından KOŞMUYOR (ADR-0008). Kendi worktree'si
+# var ve sabit bir ref'e iğneli. Sebebi ölçüldü: 2026-07-30'da geliştirme ağacı
+# `main`'e geçince `saatlik-tarama.sh` ortadan kayboldu (o dosya yalnızca
+# DW-32'den sonraki dallarda var) ve görev beş saat boyunca çıkış kodu 127 ile
+# öldü; beş derin tarama örneği kayboldu. Otomasyonu yeni koda taşımak artık
+# `tazele` ile BİLİNÇLİ bir eylem, dal değiştirmenin yan etkisi değil.
 
 set -uo pipefail
 
 ETIKET="works.duo.yt-trend"
-PROJE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SABLON="$PROJE/scripts/$ETIKET.plist"
-BETIK="$PROJE/scripts/saatlik-tarama.sh"
+KAYNAK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ⚠️ Bu betik bir geliştirme worktree'sinden de çalıştırılabiliyor (ajanlar
+# öyle çalışıyor). O durumda `$KAYNAK` worktree'yi gösterir ve orada ne `.env`
+# ne `veri/` vardır — kurulum sessizce boş bir veritabanına bağlanırdı. Bu
+# fiilen oldu. `--git-common-dir` her worktree'de ANA deponun `.git`'ini
+# gösterdiği için veri ve sırlar her zaman ana ağaçta aranıyor.
+ORTAK_GIT="$(git -C "$KAYNAK" rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$ORTAK_GIT" ]; then
+    case "$ORTAK_GIT" in
+    /*) ;;
+    *) ORTAK_GIT="$KAYNAK/$ORTAK_GIT" ;;
+    esac
+    ANA_AGAC="$(cd "$(dirname "$ORTAK_GIT")" && pwd)"
+else
+    ANA_AGAC="$KAYNAK"
+fi
+
+# Kod worktree'de; veri ve sırlar ana geliştirme ağacında kalıyor. İkisi de
+# gitignore'da olduğu için dal değişiminden zaten etkilenmiyorlar.
+CALISMA="${YT_OTOMASYON_CALISMA:-$HOME/.yt-otomasyon/calisan}"
+VERI="${YT_OTOMASYON_VERI:-$ANA_AGAC/veri}"
+ENV_DOSYA="${YT_OTOMASYON_ENV:-$ANA_AGAC/.env}"
+
+SABLON="$KAYNAK/scripts/$ETIKET.plist"
+BETIK="$CALISMA/scripts/saatlik-tarama.sh"
 HEDEF="$HOME/Library/LaunchAgents/$ETIKET.plist"
+NOBET="$VERI/gunluk/.son-basarili"
+
+# Nöbet bu yaştan eskiyse görev "yüklü ama çalışmıyor" sayılır. Saatlik bir iş
+# için iki saat, tek bir kaçırılmış koşumu hata saymayacak kadar geniş.
+NOBET_TAZELIK=7200
 
 komut="${1:-durum}"
+[ $# -gt 0 ] && shift
+
+REF=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --ref)
+        REF="${2:-}"
+        [ -n "$REF" ] || { echo "--ref bir değer istiyor" >&2; exit 1; }
+        shift 2
+        ;;
+    *)
+        echo "bilinmeyen seçenek: $1" >&2
+        exit 1
+        ;;
+    esac
+done
+
+macos_ol() {
+    [ "$(uname)" = "Darwin" ] || { echo "bu betik yalnızca macOS'ta çalışır" >&2; exit 1; }
+}
+
+# Worktree'yi kurar ya da mevcut olanı bırakır. Ref verilmezse geliştirme
+# ağacının o anki HEAD'i iğnelenir.
+worktree_hazirla() {
+    local ref="${REF:-$(git -C "$KAYNAK" rev-parse HEAD 2>/dev/null)}"
+    [ -n "$ref" ] || { echo "git deposu bulunamadı: $KAYNAK" >&2; return 1; }
+
+    if [ -e "$CALISMA/.git" ]; then
+        echo "ℹ️  worktree zaten var: $CALISMA"
+        echo "   başka bir ref'e taşımak için: $0 tazele --ref <ref>"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$CALISMA")"
+    # `--detach`: dal checkout etmiyoruz. Aksi hâlde aynı dal iki worktree'de
+    # birden checkout edilemez ve geliştirme ağacı o dala geçemez olurdu.
+    git -C "$KAYNAK" worktree add --detach "$CALISMA" "$ref" || return 1
+    echo "✅ worktree kuruldu: $CALISMA"
+}
+
+venv_hazirla() {
+    if [ -x "$CALISMA/.venv/bin/python" ]; then
+        return 0
+    fi
+    local py
+    py="$(command -v python3.13 2>/dev/null || command -v python3 2>/dev/null || true)"
+    [ -n "$py" ] || { echo "python3.13 bulunamadı" >&2; return 1; }
+
+    echo "   sanal ortam kuruluyor (bir kerelik)…"
+    "$py" -m venv "$CALISMA/.venv" || return 1
+    "$CALISMA/.venv/bin/pip" install --quiet --upgrade pip || return 1
+    "$CALISMA/.venv/bin/pip" install --quiet -e "$CALISMA" || return 1
+}
+
+plist_yaz() {
+    mkdir -p "$HOME/Library/LaunchAgents" "$VERI/gunluk"
+    # Şablondaki yer tutucular burada dolduruluyor: plist'in kendisi mutlak
+    # yol içermiyor, yani commit edilebiliyor ve iki makinede de çalışıyor.
+    sed -e "s|__CALISMA__|$CALISMA|g" \
+        -e "s|__BETIK__|$BETIK|g" \
+        -e "s|__VERI__|$VERI|g" \
+        -e "s|__ENV__|$ENV_DOSYA|g" \
+        "$SABLON" > "$HEDEF"
+    chmod +x "$CALISMA"/scripts/*.sh 2>/dev/null
+}
+
+yeniden_yukle() {
+    launchctl unload "$HEDEF" 2>/dev/null
+    launchctl load "$HEDEF"
+}
 
 case "$komut" in
 kur)
-    [ "$(uname)" = "Darwin" ] || { echo "bu betik yalnızca macOS'ta çalışır" >&2; exit 1; }
-    [ -x "$PROJE/.venv/bin/python" ] || {
-        echo "sanal ortam yok. Önce: python3.13 -m venv .venv && .venv/bin/pip install -e '.[dev]'" >&2
+    macos_ol
+    # Uyarı yetmiyor: sırsız kurulan görev saat başı önuçuşta düşer ve geriye
+    # yalnızca günlük satırı kalır. Kurulum anında durmak doğrusu.
+    [ -f "$ENV_DOSYA" ] || {
+        echo "❌ .env yok: $ENV_DOSYA" >&2
+        echo "   YOUTUBE_API_KEY olmadan kurulan görev her saat sessizce düşer." >&2
+        echo "   Başka bir yol için: YT_OTOMASYON_ENV=<yol> $0 kur" >&2
         exit 1
     }
-    [ -f "$PROJE/.env" ] || echo "⚠️  .env yok — YOUTUBE_API_KEY olmadan tarama başarısız olur"
 
-    mkdir -p "$HOME/Library/LaunchAgents" "$PROJE/veri/gunluk"
-    # Şablondaki yer tutucular burada dolduruluyor: plist'in kendisi mutlak
-    # yol içermiyor, yani commit edilebiliyor ve iki makinede de çalışıyor.
-    sed -e "s|__PROJE__|$PROJE|g" -e "s|__BETIK__|$BETIK|g" "$SABLON" > "$HEDEF"
-    chmod +x "$BETIK"
+    worktree_hazirla || exit 1
+    venv_hazirla || exit 1
 
-    launchctl unload "$HEDEF" 2>/dev/null
-    if launchctl load "$HEDEF"; then
+    # İğnelenen ref DW-32'den eskiyse betikler orada yoktur. Bunu kurulum
+    # anında söylemek, saat başı 127 almaktan iyi.
+    [ -f "$BETIK" ] || {
+        echo "❌ $BETIK yok — iğnelenen ref betikleri içermiyor." >&2
+        echo "   Betikleri içeren bir ref ile deneyin: $0 tazele --ref <ref>" >&2
+        exit 1
+    }
+
+    plist_yaz
+    if yeniden_yukle; then
         echo "✅ kuruldu: $HEDEF"
+        echo "   kod   : $CALISMA ($(git -C "$CALISMA" rev-parse --short HEAD 2>/dev/null))"
+        echo "   veri  : $VERI"
+        echo "   sırlar: $ENV_DOSYA"
         echo "   saat başı çalışacak; ilk koşum şimdi başladı (RunAtLoad)"
-        echo "   günlük: $PROJE/veri/gunluk/tarama-\$(date +%Y-%m-%d).log"
+        echo "   günlük: $VERI/gunluk/tarama-\$(date +%Y-%m-%d).log"
     else
         echo "❌ launchctl load başarısız" >&2
         exit 1
     fi
     ;;
+tazele)
+    macos_ol
+    [ -e "$CALISMA/.git" ] || { echo "worktree yok. Önce: $0 kur" >&2; exit 1; }
+
+    ref="${REF:-$(git -C "$KAYNAK" rev-parse HEAD 2>/dev/null)}"
+    git -C "$CALISMA" fetch --quiet origin 2>/dev/null
+    git -C "$CALISMA" checkout --detach "$ref" 2>/dev/null || {
+        echo "❌ ref checkout edilemedi: $ref" >&2
+        exit 1
+    }
+    [ -f "$BETIK" ] || { echo "❌ $BETIK yok — bu ref betikleri içermiyor" >&2; exit 1; }
+
+    # Bağımlılıklar değişmiş olabilir; kod değişimi editable kurulumda zaten
+    # otomatik yansıyor.
+    "$CALISMA/.venv/bin/pip" install --quiet -e "$CALISMA" 2>/dev/null
+
+    plist_yaz
+    yeniden_yukle >/dev/null 2>&1
+    echo "✅ tazelendi: $(git -C "$CALISMA" rev-parse --short HEAD) — $(git -C "$CALISMA" log -1 --format=%s)"
+    ;;
 durum)
+    saglikli=0
+
     # ⚠️ `launchctl list | grep -q` KULLANMA. `grep -q` ilk eşleşmede çıkıyor,
     # `launchctl list` SIGPIPE alıyor ve `pipefail` yüzünden boru başarısız
     # sayılıyor — sonuç, yüklü bir görev için "yüklü değil" demek. Bu fiilen
@@ -58,20 +198,52 @@ durum)
         printf '%s\n' "$satir" | sed 's/^/   /'
         echo "   (sütunlar: PID  son çıkış kodu  etiket — PID '-' ise şu an koşmuyor, normal)"
         cikis="$(printf '%s\n' "$satir" | awk '{print $2}')"
-        [ "$cikis" = "0" ] || echo "   ⚠️  son koşum sıfırdan farklı çıkış kodu verdi: $cikis"
+        if [ "$cikis" != "0" ]; then
+            echo "   ⚠️  son koşum sıfırdan farklı çıkış kodu verdi: $cikis"
+            saglikli=1
+        fi
     else
-        echo "❌ yüklü değil. Kurmak için: scripts/zamanlama-kur.sh kur"
+        echo "❌ yüklü değil. Kurmak için: $0 kur"
+        saglikli=1
     fi
-    son="$(ls -t "$PROJE"/veri/gunluk/tarama-*.log 2>/dev/null | head -1)"
+
+    echo
+    if [ -e "$CALISMA/.git" ]; then
+        echo "kod: $CALISMA"
+        echo "   $(git -C "$CALISMA" rev-parse --short HEAD) — $(git -C "$CALISMA" log -1 --format=%s 2>/dev/null)"
+        [ -f "$BETIK" ] || { echo "   ❌ saatlik-tarama.sh bu ref'te yok"; saglikli=1; }
+    else
+        echo "❌ worktree yok: $CALISMA"
+        saglikli=1
+    fi
+
+    # Nöbet tazeliği — "yüklü" görünüp hiç koşmayan görevi yakalayan tek şey.
+    echo
+    if [ -f "$NOBET" ]; then
+        yas=$(( $(date +%s) - $(stat -f %m "$NOBET" 2>/dev/null || echo 0) ))
+        if [ "$yas" -gt "$NOBET_TAZELIK" ]; then
+            echo "❌ son başarılı koşum $((yas / 60)) dakika önce — görev yüklü ama çalışmıyor"
+            saglikli=1
+        else
+            echo "✅ son başarılı koşum $((yas / 60)) dakika önce"
+        fi
+    else
+        echo "⚠️  hiç başarılı koşum yok (nöbet dosyası: $NOBET)"
+        saglikli=1
+    fi
+
+    son="$(ls -t "$VERI"/gunluk/tarama-*.log 2>/dev/null | head -1)"
     [ -n "$son" ] && { echo; echo "son günlük ($son):"; tail -8 "$son" | sed 's/^/   /'; }
+    exit "$saglikli"
     ;;
 kaldir)
     launchctl unload "$HEDEF" 2>/dev/null
     rm -f "$HEDEF"
-    echo "✅ kaldırıldı (günlükler ve veri korundu)"
+    echo "✅ kaldırıldı (günlükler, veri ve worktree korundu)"
+    echo "   worktree'yi de silmek için: git -C $KAYNAK worktree remove $CALISMA"
     ;;
 *)
-    echo "kullanım: $0 {kur|durum|kaldir}" >&2
+    echo "kullanım: $0 {kur|tazele|durum|kaldir} [--ref <ref>]" >&2
     exit 1
     ;;
 esac

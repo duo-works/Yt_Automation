@@ -11,50 +11,79 @@
 #   · Derin tarama (40 birim) saat başı — zaman serisini besliyor.
 # Geniş taramayı saat başı yapmak günlük bütçenin yarısını yer ve `mostPopular`
 # yaklaşık saatlik tazelendiği için hiçbir ek bilgi getirmez.
+#
+# ⚠️ Bu betik artık geliştirme ağacından değil, sabit bir ref'e iğnelenmiş
+# worktree'den koşuyor (ADR-0008). Sebebi ölçüldü: 2026-07-30'da geliştirme
+# ağacı `main`'e geçince betik ortadan kayboldu ve görev beş saat boyunca
+# çıkış kodu 127 ile öldü. Yolları `scripts/zamanlama-kur.sh` yönetiyor.
 
 set -uo pipefail
 
-PROJE="${YT_OTOMASYON_KOK:-$HOME/Projects/Yt_Automation}"
-cd "$PROJE" || { echo "proje dizini yok: $PROJE" >&2; exit 1; }
+# shellcheck source=scripts/ortak.sh
+. "$(dirname "${BASH_SOURCE[0]}")/ortak.sh"
 
-if [ -f .env ]; then
-    set -a
-    # shellcheck disable=SC1091
-    . ./.env
-    set +a
+if ! onucus; then
+    bildir "Tarama başlayamadı — önuçuş kontrolü düştü. Günlük: $GUNLUK"
+    exit 1
 fi
 
-PY="$PROJE/.venv/bin/python"
-[ -x "$PY" ] || { echo "sanal ortam yok: $PY" >&2; exit 1; }
-
-GUNLUK_DIZIN="${YT_OTOMASYON_GUNLUK:-$PROJE/veri/gunluk}"
-mkdir -p "$GUNLUK_DIZIN"
-GUNLUK="$GUNLUK_DIZIN/tarama-$(date +%Y-%m-%d).log"
-
-kaydet() { printf '%s  %s\n' "$(date '+%H:%M:%S')" "$*" >> "$GUNLUK"; }
+basarisiz=0
 
 # Geniş taramayı günde bir kez: bugünün damgası dosyada yoksa çalıştır.
 # `kosu` tablosuna sormak daha doğru olurdu ama bu kontrol kabuğun içinde
 # kalabildiği sürece betik tek başına anlaşılır kalıyor.
-NOBET="$GUNLUK_DIZIN/.genis-$(date +%Y-%m-%d)"
-if [ ! -f "$NOBET" ]; then
+GENIS_NOBET="$GUNLUK_DIZIN/.genis-$(date +%Y-%m-%d)"
+if [ ! -f "$GENIS_NOBET" ]; then
     kaydet "geniş tarama başlıyor"
     if "$PY" -m yt_automation.cli trend topla --genis >> "$GUNLUK" 2>&1; then
-        touch "$NOBET"
+        touch "$GENIS_NOBET"
         kaydet "geniş tarama tamam"
     else
-        kaydet "geniş tarama BAŞARISIZ (çıkış $?)"
+        kaydet "HATA: geniş tarama başarısız (çıkış $?)"
+        basarisiz=1
     fi
 fi
 
 kaydet "derin tarama başlıyor"
-"$PY" -m yt_automation.cli trend topla --derin >> "$GUNLUK" 2>&1 \
-    && kaydet "derin tarama tamam" \
-    || kaydet "derin tarama BAŞARISIZ (çıkış $?)"
+if "$PY" -m yt_automation.cli trend topla --derin >> "$GUNLUK" 2>&1; then
+    kaydet "derin tarama tamam"
+else
+    kaydet "HATA: derin tarama başarısız (çıkış $?)"
+    basarisiz=1
+fi
 
 # Ücretsiz adımlar: kota harcamıyorlar, her koşumda çalışabilirler.
-"$PY" -m yt_automation.cli trend siniflandir >> "$GUNLUK" 2>&1 || kaydet "sınıflandırma başarısız"
+if ! "$PY" -m yt_automation.cli trend siniflandir >> "$GUNLUK" 2>&1; then
+    kaydet "HATA: sınıflandırma başarısız (çıkış $?)"
+    basarisiz=1
+fi
+
+# Günlük aday hunisi — günde bir kez, geniş taramayla aynı nöbet deseniyle.
+#
+# ⚠️ Nöbet dosyası yalnızca BAŞARIDA konuyor, yani düşen bir huni ertesi saat
+# yeniden deneniyor. Bu güvenli: tek pahalı adım olan sondaj
+# `bosluk.SONDAJ_KOTA_TAVANI` (3.000 birim/gün) ile ayrıca sınırlı, tekrar
+# denemeler bütçeyi süpüremez.
+HUNI_NOBET="$GUNLUK_DIZIN/.huni-$(date +%Y-%m-%d)"
+if [ ! -f "$HUNI_NOBET" ]; then
+    if bash "$PROJE/scripts/gunluk-huni.sh"; then
+        touch "$HUNI_NOBET"
+    else
+        basarisiz=1
+    fi
+fi
 
 # Eski günlükleri temizle — 30 günden fazlasını tutmanın faydası yok.
 find "$GUNLUK_DIZIN" -name 'tarama-*.log' -mtime +30 -delete 2>/dev/null
 find "$GUNLUK_DIZIN" -name '.genis-*' -mtime +2 -delete 2>/dev/null
+find "$GUNLUK_DIZIN" -name '.huni-*' -mtime +2 -delete 2>/dev/null
+
+if [ "$basarisiz" = "1" ]; then
+    bildir "Saatlik tarama bir veya daha fazla adımda düştü. Günlük: $GUNLUK"
+    exit 1
+fi
+
+# Nöbet damgası: `zamanlama-kur.sh durum` bunun tazeliğine bakıyor. Görevin
+# "yüklü" görünüp aslında hiç koşmaması bu dosya olmadan anlaşılmıyordu.
+date -u '+%Y-%m-%dT%H:%M:%SZ' > "$NOBET"
+exit 0

@@ -33,7 +33,7 @@ Görev üç parçadan oluşuyor ve hepsi repo'da:
 |---|---|
 | `scripts/works.duo.yt-trend.plist` | `launchd` tanımı, yer tutucularla (commit edilebilir) |
 | `scripts/saatlik-tarama.sh` | Ortamı kuruyor, koşumları sırayla yapıyor, günlüğe yazıyor |
-| `scripts/zamanlama-kur.sh` | `kur` / `durum` / `kaldir` |
+| `scripts/zamanlama-kur.sh` | `kur` / `durum` / `kaldir` (ADR-0008 `tazele`'yi ekledi) |
 
 ### Geniş tarama günde bir, derin tarama saat başı
 
@@ -48,6 +48,8 @@ Geniş taramayı saat başı yapmak günde 5.328 birim eder — günlük bütçe
 
 Şablonda `__PROJE__` ve `__BETIK__` yer tutucuları var; `zamanlama-kur.sh` bunları kurulum anında dolduruyor. Böylece plist commit edilebiliyor ve iki farklı makinede de çalışıyor.
 
+> ADR-0008 yer tutucu setini `__CALISMA__` / `__BETIK__` / `__VERI__` / `__ENV__` olarak değiştirdi: kod, veri ve sırlar artık ayrı yollarda.
+
 ## Sonuçları
 
 **Kazanç:** İvme gerçekten hesaplanabiliyor. Kurulumun kendisi doğrulandı — görev 15:04'te kendiliğinden çalıştı, geniş taramayı (9.583 ölçüm) ve derin taramayı (1.980 ölçüm) yaptı, sınıflandırmayı koştu.
@@ -56,7 +58,8 @@ Geniş taramayı saat başı yapmak günde 5.328 birim eder — günlük bütçe
 
 - **Yalnızca macOS.** Ömer Windows'ta çalışıyor; oradaki karşılığı Görev Zamanlayıcı ve yazılmadı. Trend hattı Mirza'nın makinesinde çalıştığı için bugün engel değil, ama iş bölümü değişirse ayrı görev gerekiyor.
 - **Laptop kapalıyken boşluk oluşuyor.** Kalıcı host DW-8'e bağlı. Boşluklar hız hesabını bozmuyor, çözünürlüğü düşürüyor.
-- **Sessiz başarısızlık riski.** Betik hataları günlüğe yazıyor ama kimseye bildirmiyor. `zamanlama-kur.sh durum` son koşumun çıkış kodunu gösteriyor; düzenli bakılması gereken bir şey. Bildirim eklemek bugünün ihtiyacı değil.
+- ~~**Sessiz başarısızlık riski.** Betik hataları günlüğe yazıyor ama kimseye bildirmiyor. `zamanlama-kur.sh durum` son koşumun çıkış kodunu gösteriyor; düzenli bakılması gereken bir şey. Bildirim eklemek bugünün ihtiyacı değil.~~
+  > **Bu değerlendirme aynı gün yanlışlandı.** Görev 15:11'de dal değişimi yüzünden öldü, beş saat boyunca çıkış kodu 127 verdi ve hiç kimse fark etmedi; beş derin tarama örneği kayboldu. ADR-0008 hem kök nedeni (otomasyonun geliştirme ağacına çakılı olması) hem bildirim eksikliğini kapatıyor.
 
 ### Kurulum sırasında bulunan hata
 
