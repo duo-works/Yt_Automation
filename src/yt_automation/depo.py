@@ -27,7 +27,8 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 # 1 → kota defteri + YouTube trend tabloları
 # 2 → Wikipedia makale/okunma tabloları (DW-34)
 # 3 → kaynak dosyası: referans, olgu, görsel (DW-37)
-SEMA_SURUMU = 3
+# 4 → arz sondajı: talep-arz boşluğu ölçümü (DW-35)
+SEMA_SURUMU = 4
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -135,6 +136,35 @@ CREATE TABLE IF NOT EXISTS kaynak (
 );
 
 CREATE INDEX IF NOT EXISTS kaynak_qid ON kaynak(qid);
+
+-- Arz sondajı: bir konuda YouTube'da **ne varsa** onun ölçümü.
+--
+-- Huninin tek pahalı adımı burası (sondaj başına 102 birim), o yüzden sonuç
+-- diske yazılıyor: aynı konuyu iki kez sondalamak 102 birimi çöpe atmak olur.
+--
+-- ⚠️ **Skor burada yok ve bu bilinçli.** Skor bu ölçümlerden türetiliyor;
+-- saklanırsa ağırlıklar ayarlandığında bayatlar ve "hangi formülle
+-- hesaplanmıştı" sorusu doğar. Ham ölçüm kalıcı, skor okuma anında.
+--
+-- `search.list`'in `totalResults` alanı **kaydedilmiyor**: Google onu tahmini
+-- veriyor ve gerçekten yanıltıcı. Arz, dönen videoların kendi
+-- istatistiklerinden ölçülüyor.
+CREATE TABLE IF NOT EXISTS arz (
+    qid            TEXT    NOT NULL,
+    dil            TEXT    NOT NULL,  -- sondajın dili (relevanceLanguage)
+    an             TEXT    NOT NULL,
+    sorgu          TEXT    NOT NULL,
+    donen          INTEGER NOT NULL,  -- search.list'in döndürdüğü video sayısı
+    alakali        INTEGER NOT NULL,  -- başlığı konuyla gerçekten örtüşen
+    medyan_izlenme INTEGER,
+    ust_izlenme    INTEGER,
+    medyan_yas_gun INTEGER,
+    medyan_abone   INTEGER,
+    harcanan       INTEGER NOT NULL,  -- bu sondajın gerçek kota maliyeti
+    PRIMARY KEY (qid, dil, an)
+);
+
+CREATE INDEX IF NOT EXISTS arz_qid ON arz(qid);
 """
 
 
