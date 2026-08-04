@@ -27,6 +27,7 @@ import json
 import shutil
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 KOK = Path(__file__).resolve().parent.parent
@@ -40,6 +41,31 @@ KIMLIKLER = {
     "Ömer Faruk Güleç": "Ömer",
     "ofgworks": "Ömer",
 }
+
+# NFKD'nin **ayrıştırmadığı** harfler. `ü → u + ¨` ayrışıyor ama `ı` ayrı bir
+# harf olduğu için ayrışmıyor: "Sarıbıyık" → "Sarbyk" olurdu.
+#
+# Aynı tablo `trend/bosluk.py`'de de var (orada alaka ölçümü için). Burada
+# kopyalanmasının sebebi bu betiğin **kurulumdan önce** çalışması: paket
+# kurulu olmayabilir, `src/` içinden import edilemez.
+_AYRISMAYAN = str.maketrans({"ı": "i", "İ": "i", "ş": "s", "ğ": "g"})
+
+
+def _sadelestir(ad: str) -> str:
+    """Aksanları düşürür, küçük harfe indirir.
+
+    ⚠️ Git kimliği ASCII'ye düşebiliyor: Ömer'in makinesinde ölçülen değer
+    `Omer Faruk Gulec` idi ve tabloda `Ömer Faruk Güleç` yazdığı için kimlik
+    "tabloda yok" sayılıyordu. Windows kurulumları bu değeri tekrar
+    üretebiliyor, yani tabloya ASCII satırı eklemek kalıcı çözüm değil —
+    karşılaştırmanın kendisi aksana duyarsız olmalı.
+    """
+    sade = unicodedata.normalize("NFKD", ad.casefold().translate(_AYRISMAYAN))
+    return "".join(k for k in sade if not unicodedata.combining(k)).strip()
+
+
+# Aksana duyarsız arama tablosu — yukarıdakinden türetilir, elle tutulmaz.
+_ARAMA = {_sadelestir(ad): kisi for ad, kisi in KIMLIKLER.items()}
 
 YESIL, KIRMIZI, SARI, SIFIRLA = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
@@ -83,13 +109,14 @@ def git_kimligi(rapor: Rapor) -> None:
             "Git kimliği boş",
             'git config user.name "Ömer Faruk Güleç"   ← kendi adınızla',
         )
-    elif ad in KIMLIKLER:
-        rapor.ekle("ok", f"Git kimliği: {ad} → Notion `Kişi` = {KIMLIKLER[ad]}")
+    elif kisi := _ARAMA.get(_sadelestir(ad)):
+        rapor.ekle("ok", f"Git kimliği: {ad} → Notion `Kişi` = {kisi}")
     else:
         rapor.ekle(
             "hata",
             f"Git kimliği tabloda yok: {ad!r}",
-            "Oturum kaydı yanlış kişiye açılır ve bu FARK EDİLMEZ.",
+            "Oturum kaydı yanlış kişiye açılır ve bu FARK EDİLMEZ.\n"
+            f"Tanınanlar: {', '.join(KIMLIKLER)} (aksansız yazımları da geçerli).",
         )
 
 

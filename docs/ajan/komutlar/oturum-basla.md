@@ -15,7 +15,11 @@ git config user.name
 | `Mirza Sarıbıyık` | `Mirza` |
 | `Ömer Faruk Güleç` · `ofgworks` | `Ömer` |
 
+**Aksansız yazımlar da geçerli.** `Omer Faruk Gulec` ile `Ömer Faruk Güleç` aynı kişidir; karşılaştırmayı aksana duyarlı yapma. Ölçüldü: Ömer'in makinesinde değer `Omer Faruk Gulec` olarak duruyordu ve aksana duyarlı bir kontrol bunu "tabloda yok" sayıyordu. Windows kurulumları bu değeri tekrar üretebiliyor, yani tabloya ASCII satırı eklemek kalıcı çözüm değil.
+
 Boşsa veya tabloda yoksa **kullanıcıya sor** — tahmin etme. Yanlış atfedilen kayıt sessizce yanlış kalır.
+
+> `scripts/ajan-kurulum.py` bu eşleştirmeyi aksana duyarsız yapıyor ve hangi `Kişi` değerine düştüğünü yazdırıyor; emin değilsen onu çalıştır.
 
 ## 2. Aktif kayıtları sorgula
 
