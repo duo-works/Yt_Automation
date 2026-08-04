@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 VARSAYILAN_DIZIN = "veri"
@@ -60,8 +60,25 @@ def baglan(yol: Path) -> sqlite3.Connection:
     # Sonra gelselerdi WAL geçişi ve şema kurulumu, başka bir yazar kilidi
     # tutarken beklemek yerine anında `database is locked` ile düşerdi.
     baglanti.execute("PRAGMA busy_timeout=30000")
-    # WAL kalıcı bir veritabanı özelliği; okuyucuların yazarı beklememesini sağlar.
-    baglanti.execute("PRAGMA journal_mode=WAL")
+    # ⚠️ `journal_mode` geçişi yukarıdaki `busy_timeout`un **istisnası**: özel
+    # (exclusive) kilit istiyor ve beklemiyor — başka bağlantı işlemdeyse
+    # anında `SQLITE_BUSY` dönüyor. Yani bir üstteki yorumun verdiği "artık
+    # beklenir" garantisi tam bu satır için geçerli değil.
+    #
+    # Taze bir dosyada tüm bağlantılar aynı anda "WAL değil" görüp hepsi
+    # geçişi deniyor; biri kazanıyor, kalanı `database is locked` alıyor.
+    # Ölçüldü: 32 eşzamanlı bağlantı, 40 turun 2'sinde tetikleniyor (macOS);
+    # CI'ın Linux koşucusunda daha sık — `test_esZamanli_harcama_butceyi_asmaz`
+    # oradan düşüyordu.
+    #
+    # Yarışı kazanmaya çalışmak yanlış çerçeve: WAL **kalıcı bir veritabanı
+    # özelliği**, yarışı başkası kazandıysa bizim için de kurulmuş demektir.
+    # Bu yüzden önce okunuyor, gerekiyorsa yazılıyor ve hata yutuluyor.
+    if (baglanti.execute("PRAGMA journal_mode").fetchone()[0] or "").lower() != "wal":
+        # Kaybetmek zararsız: bu bağlantı bu seferlik eski kip'te çalışır,
+        # doğruluk etkilenmez — yalnızca eşzamanlılık.
+        with suppress(sqlite3.OperationalError):
+            baglanti.execute("PRAGMA journal_mode=WAL")
     baglanti.executescript(SEMA)
     return baglanti
 
