@@ -16,8 +16,20 @@ Commit mesajlarını da kontrol et: her biri Conventional Commits formatında ve
 
 ## 2. Kapsamı kontrol et
 
-- **PR başına tek görev.** İki görev karışmışsa dur, kullanıcıya söyle.
-- **~400 satır hedefi.** Aşıyorsa uyar; görevi Notion'da bölmek gerekebilir.
+- **PR başına tek görev.** İki görev karışmışsa dur, kullanıcıya söyle. Asıl
+  ölçüt budur — satır sayısı değil.
+- **~1.200 satır hedefi.** Aşıyorsa uyar; görevi Notion'da bölmek gerekebilir.
+
+  > Eşik 2026-08-04'te 400'den yükseltildi. Sebebi: bu repoda hiçbir PR 400'ü
+  > tutmadı ve tutamazdı — bir özellik kod + test + ADR ile birlikte geliyor,
+  > testler bu projede kodun kendisinden uzun (ölçüldü: DW-58 PR'ı 1.214 satır,
+  > 519'u test). Kimse uyarıya bakmadı, çünkü her PR'da çıkıyordu.
+  > **Tutulmayan kural, tutulan kuralların da ciddiyetini aşındırır.**
+  >
+  > Yeni eşik de bir hedef, kapı değil: aşan PR reddedilmiyor, sorgulanıyor.
+  > Bölme kararının gerçek ölçütü satır değil **tek görev** kuralı; 1.500
+  > satırlık tek bir mantıksal değişiklik, 300 satırlık iki ayrı işten daha
+  > kolay review edilir.
 - `.env` veya sır sızmış mı bak.
 - Kalıcı bir mimari karar alındıysa `docs/decisions/` altında ADR var mı kontrol et.
 

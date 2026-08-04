@@ -115,8 +115,16 @@ Beşi de `pr-title-ok` adlı kapı job'ına bağlı. Branch protection **yalnız
 
 ### Kurallar
 
-- **PR başına tek görev.** İki görevi bir PR'a sıkıştırmayın.
-- **~400 satır değişim hedefi.** Daha büyükse görevi Notion'da bölün.
+- **PR başına tek görev.** İki görevi bir PR'a sıkıştırmayın. Bölme kararının
+  asıl ölçütü budur, satır sayısı değil.
+- **~1.200 satır değişim hedefi.** Daha büyükse görevi Notion'da bölmeyi
+  değerlendirin.
+
+  > Eşik 2026-08-04'te 400'den yükseltildi. Bu repoda hiçbir PR 400'ü tutmadı:
+  > bir özellik kod + test + ADR ile birlikte geliyor ve testler çoğu zaman
+  > kodun kendisinden uzun (DW-58 PR'ı 1.214 satırdı, 519'u test). Her PR'da
+  > çıkan bir uyarıya kimse bakmaz; tutulmayan kural, tutulan kuralların da
+  > ciddiyetini aşındırır.
 - **Squash merge zorunlu.** Geçmiş lineer ve okunabilir kalır.
 - Merge sonrası branch otomatik silinir.
 - **CI yeşil olmadan merge yapılmaz.** İnsan onayı ön koşul değildir (ADR-0012).

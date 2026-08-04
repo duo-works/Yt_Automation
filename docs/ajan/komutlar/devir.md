@@ -41,6 +41,10 @@ Denenip işe yaramayan yolları yazmak da en az yapılanlar kadar değerli: ayn�
 - Commit edilmemiş değişiklik varsa kullanıcıya sor: commit mi, stash mi, olduğu gibi mi kalacak
 - Branch push edilmemişse söyle — devralan onu göremez
 - Worktree kullandıysan yolunu `## Dikkat` altına yaz
+- **Canlı otomasyonun hangi ref'te olduğunu yaz** (`scripts/zamanlama-kur.sh durum`).
+  Zamanlanmış hat sabit bir ref'e iğneli (ADR-0008) ve merge onu taşımıyor;
+  devralan aksi hâlde kodun canlıda çalıştığını sanır. Tazeleme gerekiyor ama
+  yapılmadıysa bunu `## Sıradaki adım`a komut seviyesinde yaz.
 
 ## 5. Raporla
 
