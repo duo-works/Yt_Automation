@@ -85,7 +85,12 @@ Kod yazmaya başlamadan önce [`CONTRIBUTING.md`](CONTRIBUTING.md) dosyasını o
 1. Notion'da görevi **Yapılıyor**'a alın
 2. `main`'den branch açın: `feat/DW-42-kisa-aciklama`
 3. PR başlığı: `feat(kapsam): açıklama [DW-42]`
-4. Onay + yeşil CI → squash merge
+4. Yeşil CI → squash merge (insan onayı ön koşul değil)
 5. Notion'da görevi **Bitti**'ye alın
 
-`main`'e doğrudan push kapalıdır. Branch adı, commit mesajı ve PR gövdesi CI tarafından doğrulanır.
+`main`'e doğrudan push kapalıdır — ve bu **iddia değil, doğrulanmış bir gerçek**:
+koruma kuralları DW-1'de uçtan uca sınandı. Kasten yanlış yazılmış bir PR başlığı
+reddedildi, doğru başlık geçti, korumasız bir push `GH006` ile durduruldu.
+
+Branch adı, commit mesajı ve PR gövdesi CI tarafından doğrulanır; `ci-ok` ve
+`pr-title-ok` zorunlu kontrollerdir ve yönetici hesaplara da uygulanır.
