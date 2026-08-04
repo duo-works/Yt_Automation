@@ -592,9 +592,7 @@ def test_guncelleme_format_alanini_yazar(yol: Path, wiki_aday, pazar, monkeypatc
     sahte = SahteNotion()
     monkeypatch.setattr(notion, "_istek", sahte)
 
-    sonuc = notion.bosluklari_guncelle(
-        yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0
-    )
+    sonuc = notion.bosluklari_guncelle(yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0)
 
     assert sonuc.guncellenen > 0
     yamalar = [g for y, _, g in sahte.cagrilar if y == "PATCH"]
@@ -658,9 +656,7 @@ def test_yazilmamis_aday_atlanir(yol: Path, wiki_aday, pazar, monkeypatch):
     sahte = SahteNotion()
     monkeypatch.setattr(notion, "_istek", sahte)
 
-    sonuc = notion.bosluklari_guncelle(
-        yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0
-    )
+    sonuc = notion.bosluklari_guncelle(yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0)
 
     assert sonuc.guncellenen == 0
     assert sonuc.sayfasiz > 0
