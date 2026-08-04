@@ -25,6 +25,7 @@ from . import __version__, depo, kanal, kota
 from .trend import (
     bolge,
     bosluk,
+    gtrends,
     hiz,
     kaynak,
     konu_toplayici,
@@ -465,6 +466,43 @@ def _trend_aktar(*, adet: int, kuru: bool, zorla: bool, kaynak_turu: str) -> int
     return 1 if sonuc.yazilan == 0 else 0
 
 
+def _konu_gtrends(*, kuru: bool) -> int:
+    """Google Trends keşfi — YouTube kotası 0, tüm çağrılar ücretsiz API'lere."""
+    yol = depo.varsayilan_yol()
+    if kuru:
+        # Kuru kip yalnızca ağın okuma tarafını kullanır: terimler çekilir,
+        # eşleşme aranır, hiçbir şey yazılmaz.
+        pazarlar = bosluk.hedef_pazarlar()
+        print(f"KURU KOŞUM — Google Trends · pazarlar: {', '.join(pazarlar)}")
+        for dil in pazarlar:
+            for geo in gtrends.GEO_KODLARI.get(dil, ()):
+                try:
+                    terimler = gtrends.terimleri_cek(geo)
+                except gtrends.GTrendsHatasi as hata:
+                    print(f"  {geo}: HATA {hata}", file=sys.stderr)
+                    continue
+                print(f"  {geo}: {len(terimler)} terim")
+                for t in terimler[:5]:
+                    # Tek terimin arama hatası raporu bitirmemeli — canlı
+                    # koşumda Wikipedia 429 döndürdü ve kuru koşum çöktü.
+                    try:
+                        eslesme = gtrends.makale_ara(dil, t.terim)
+                    except gtrends.GTrendsHatasi as hata:
+                        print(f"    · {t.terim} → HATA {hata}", file=sys.stderr)
+                        continue
+                    ok = f"→ {eslesme.replace('_', ' ')}" if eslesme else "→ eşleşme yok"
+                    print(f"    · {t.terim} ({t.trafik or '?'}) {ok}")
+        return 0
+
+    sonuc = gtrends.isle(yol)
+    print(sonuc.ozet())
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    # Terim gelmemesi hata (RSS kırık olabilir), eşleşme az olması değil:
+    # magazin/spor ağırlıklı listede düşük eşleşme normal gün.
+    return 1 if sonuc.terim == 0 else 0
+
+
 def _konu_topla(*, diller: str, gun: str | None, adet: int) -> int:
     """Wikipedia okunma sıçramaları — kota harcamaz, anahtar istemez."""
     yol = depo.varsayilan_yol()
@@ -705,6 +743,11 @@ def main(argv: list[str] | None = None) -> int:
     ks.add_argument("--limit", type=int, default=200, help="En fazla kaç makale sorulsun")
     ks.add_argument("--kuru", action="store_true", help="Hiç çağrı yapma, yalnızca kuyruğu bildir")
 
+    kg = konu_altlar.add_parser(
+        "gtrends", help="Google Trends RSS'inden gün-içi konu keşfi (kota harcamaz)"
+    )
+    kg.add_argument("--kuru", action="store_true", help="Hiç yazma, terim ve eşleşmeleri göster")
+
     args = ayristirici.parse_args(argv)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
@@ -747,6 +790,8 @@ def main(argv: list[str] | None = None) -> int:
             return _konu_siniflandir(limit=args.limit, kuru=args.kuru)
         if args.konu_komutu == "kaynak":
             return _konu_kaynak(limit=args.limit, json_cikti=args.json, yenile=args.yenile)
+        if args.konu_komutu == "gtrends":
+            return _konu_gtrends(kuru=args.kuru)
     return 1
 
 

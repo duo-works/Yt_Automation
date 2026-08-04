@@ -58,6 +58,17 @@ if ! "$PY" -m yt_automation.cli trend siniflandir >> "$GUNLUK" 2>&1; then
     basarisiz=1
 fi
 
+# Google Trends keşfi — saatlik olması bilinçli (DW-55): Wikipedia günlük
+# yayımlıyor, gün-içi tazeliği veren tek kaynak bu. YouTube kotası 0.
+#
+# ⚠️ Bu adım koşumu düşürmüyor ve `basarisiz` işaretlemiyor. Gerekçe: dış bir
+# RSS ucu bizim hattımızın sağlığı değil. Kırıldığında bildirim göndermek,
+# DW-47'nin bitirdiği yanlış alarm düzenine geri dönmek olurdu; günlükte
+# görünür kalıyor ve keşif kaynağı olmadan huni yine çalışıyor.
+if ! "$PY" -m yt_automation.cli konu gtrends >> "$GUNLUK" 2>&1; then
+    kaydet "UYARI: Google Trends keşfi başarısız (çıkış $?) — huni etkilenmedi"
+fi
+
 # Günlük aday hunisi — günde bir kez, geniş taramayla aynı nöbet deseniyle.
 #
 # ⚠️ Nöbet dosyası yalnızca BAŞARIDA konuyor, yani düşen bir huni ertesi saat
