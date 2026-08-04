@@ -61,6 +61,9 @@ adim() {
     cikti="$("$PY" -m yt_automation.cli "$@" 2>&1)"
     kod=$?
     printf '%s\n' "$cikti" >> "$GUNLUK"
+    # Son adımın çıktısı adım dışında da okunabilsin: sıçrama bildirimi
+    # `trend aktar`ın "acil aday" satırına bakıyor (DW-54).
+    SON_CIKTI="$cikti"
 
     if [ "$kod" = "0" ]; then
         kaydet "huni · $ad tamam"
@@ -111,6 +114,14 @@ adim "konu kaynak" 0 konu kaynak --limit "$KAYNAK"
 
 # 5 · Devir noktası: adaylar 📈 Trend Adayları'na düşer.
 adim "trend aktar" 1 trend aktar --adet "$AKTAR"
+
+# Sıçrama bildirimi (DW-54): bildirim şimdiye dek yalnızca HATA yolundaydı.
+# Acil aday bir fırsat sinyali ve saatler içinde değer kaybediyor — sabah
+# Notion kontrolünü beklemesi tespitin anlamını sıfırlar. Desen CLI'ın
+# kendi çıktısına dayanıyor ("acil aday", trend aktar basar), testle kilitli.
+if [ "$kuru" = "0" ] && printf '%s' "${SON_CIKTI:-}" | grep -qi "acil aday"; then
+    bildir "🔥 Sıçrayan konu Notion'a düştü — acil adaylara bakın."
+fi
 
 if [ "$kuru" = "1" ]; then
     printf '\nKuru koşum bitti — hiçbir kota harcanmadı, depoya yazılmadı.\n'

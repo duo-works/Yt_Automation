@@ -30,6 +30,7 @@ from .trend import (
     konu_toplayici,
     nis,
     notion,
+    sicrama,
     siniflandirici,
     toplayici,
     video_sinif,
@@ -167,7 +168,15 @@ def _trend_rapor(*, bolge_kodu: str | None, siniflar: str | None, sirala: str, l
 def _bosluk_arastir(*, limit: int, kuru: bool) -> int:
     """Talep-arz sondajı — huninin tek pahalı adımı, sondaj başına 102 birim."""
     yol = depo.varsayilan_yol()
-    adaylar = bosluk.sondajlanmamis_adaylar(yol, limit)
+    # Sıçrama detektörü (DW-54): patlayan konu kuyruğun başına geçer. Kota
+    # harcamaz — girdisi zaten toplanmış okunma serileri.
+    sicramalar = sicrama.tespit_et(yol)
+    oncelikli = {s.qid for s in sicramalar if s.qid}
+    if sicramalar:
+        print(f"🔥 {len(sicramalar)} sıçrama tespit edildi — kuyruğun başına alındı:")
+        for s in sicramalar[:5]:
+            print(f"    {s.satir()}")
+    adaylar = bosluk.sondajlanmamis_adaylar(yol, limit, oncelikli_qidler=oncelikli)
     sayac = kota.KaliciSayac(yol, surec=bosluk.SUREC)
 
     if not adaylar:
@@ -211,7 +220,7 @@ def _bosluk_arastir(*, limit: int, kuru: bool) -> int:
         print(f"HATA: {hata}", file=sys.stderr)
         return 1
 
-    sonuc = bosluk.arastir(istemci, sayac, yol, limit=limit)
+    sonuc = bosluk.arastir(istemci, sayac, yol, limit=limit, oncelikli_qidler=oncelikli)
     print(sonuc.ozet())
     for hata in sonuc.hatalar[:5]:
         print(f"  hata: {hata}", file=sys.stderr)
@@ -420,11 +429,19 @@ def _trend_aktar(*, adet: int, kuru: bool, zorla: bool, kaynak_turu: str) -> int
         ayrinti = " · ".join(f"{sayi} {gerekce}" for gerekce, sayi in sorted(eleme.items()))
         print(f"Kapılar {toplam} adayı eledi — {ayrinti}")
 
+    # Sıçrayanlar 🔥 Acil düşer (DW-54); Notion bildirim aboneliği o durumu
+    # telefona taşır. Kota 0 — tespit zaten toplanmış okunma serilerinden.
+    acil_qidler = sicrama.sicrayan_qidler(yol) if wiki else set()
+    acil_sayisi = sum(1 for a in adaylar if wiki and a.qid in acil_qidler)
+    if acil_sayisi:
+        print(f"🔥 {acil_sayisi} acil aday — sıçrama tespit edildi, Acil durumuyla düşecek")
+
     if kuru:
         print(f"KURU KOŞUM — Notion aktarımı · kaynak: {kaynak_turu} · {len(adaylar)} aday")
         print("  YouTube kotası harcanmıyor; Notion yazma tarafı da kotasız.\n")
         for aday in adaylar:
-            print(f"  {aday.satir()}")
+            isaret = "🔥 " if wiki and aday.qid in acil_qidler else "  "
+            print(f"{isaret}{aday.satir()}")
         return 0
 
     try:
@@ -434,7 +451,9 @@ def _trend_aktar(*, adet: int, kuru: bool, zorla: bool, kaynak_turu: str) -> int
         return 1
 
     sonuc = (
-        notion.bosluklari_aktar(yol, adaylar=adaylar, database=database, token=token)
+        notion.bosluklari_aktar(
+            yol, adaylar=adaylar, database=database, token=token, acil_qidler=acil_qidler
+        )
         if wiki
         else notion.aktar(yol, adaylar=adaylar, database=database, token=token)
     )
