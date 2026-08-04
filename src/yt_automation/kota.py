@@ -42,6 +42,7 @@ MALIYET = {
     "search.list": 100,
     "videos.list": 1,
     "channels.list": 1,
+    "playlistItems.list": 1,
     "playlistItems.insert": 50,
     "videoCategories.list": 1,
     "i18nRegions.list": 1,

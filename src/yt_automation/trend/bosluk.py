@@ -70,10 +70,10 @@ SONDAJ_MALIYETI = kota.MALIYET[ARAMA] + kota.MALIYET[ISTATISTIK] + kota.MALIYET[
 #
 #   yükleme (2 video)   3.302   ← dokunulmaz, `rezerve` ile korunuyor
 #   trend çartı         2.500   ← bolge.TREND_KOTA_TAVANI
-#   niş kanal izleme      150   ← DW-36
+#   niş kanal izleme      500   ← nis.NIS_KOTA_TAVANI (kanal başına 2 birim)
 #   boşluk sondajı      3.000   ← burası, ~29 sondaj
 #   ────────────────────────────
-#   pay toplamı         8.952 / 10.000
+#   pay toplamı         9.302 / 10.000
 #
 # Günde 1 video için 29 sondaj fazlasıyla yeterli. Ayrı bir `surec` etiketi
 # kullanılıyor ("bosluk"): çart toplayıcısıyla aynı tavanı paylaşsalardı

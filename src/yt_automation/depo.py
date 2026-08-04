@@ -28,7 +28,8 @@ VERI_DIZINI_DEGISKENI = "YT_OTOMASYON_VERI"
 # 2 → Wikipedia makale/okunma tabloları (DW-34)
 # 3 → kaynak dosyası: referans, olgu, görsel (DW-37)
 # 4 → arz sondajı: talep-arz boşluğu ölçümü (DW-35)
-SEMA_SURUMU = 4
+# 5 → niş kanal izleme: kanal kataloğu + kanal bazlı ölçüm (DW-36)
+SEMA_SURUMU = 5
 
 SEMA = """
 CREATE TABLE IF NOT EXISTS kota_harcama (
@@ -165,6 +166,38 @@ CREATE TABLE IF NOT EXISTS arz (
 );
 
 CREATE INDEX IF NOT EXISTS arz_qid ON arz(qid);
+
+-- İzlenen niş kanallar. Katalog `nis.IZLENEN_KANALLAR`'da (handle listesi);
+-- bu tablo handle'ın çözülmüş hâlini tutuyor, böylece `channels.list` bir kez
+-- ödeniyor.
+CREATE TABLE IF NOT EXISTS nis_kanal (
+    kanal_id        TEXT PRIMARY KEY,
+    handle          TEXT NOT NULL UNIQUE,
+    ad              TEXT,
+    sinif           TEXT,     -- tarih | bilim; katalogdan gelir, ölçülmez
+    yukleme_listesi TEXT,     -- contentDetails.relatedPlaylists.uploads
+    abone           INTEGER,  -- gizlenmişse NULL
+    video_sayisi    INTEGER,
+    guncelleme      TEXT NOT NULL
+);
+
+-- Niş videoların ölçümü. `olcum` tablosu kullanılmıyor: orada `bolge`
+-- anahtarın parçası ve niş videoların bölgesi yok. Yapay bir bölge kodu
+-- koymak DW-29'un `COUNT(DISTINCT bolge)` yayılım hesabını kirletirdi.
+--
+-- Video metadata'sı ortak `video` tablosunda duruyor — aynı video hem çartta
+-- hem niş listede görünebilir ve başlığı iki yerde tutmak ayrışma demek.
+CREATE TABLE IF NOT EXISTS nis_olcum (
+    video_id TEXT NOT NULL,
+    kanal_id TEXT NOT NULL,
+    an       TEXT NOT NULL,
+    izlenme  INTEGER,
+    begeni   INTEGER,
+    yorum    INTEGER,
+    PRIMARY KEY (video_id, an)
+);
+
+CREATE INDEX IF NOT EXISTS nis_olcum_kanal ON nis_olcum(kanal_id);
 """
 
 
