@@ -1043,6 +1043,64 @@ def test_gozlemsiz_format_skorlanmaz():
     assert bosluk.onerilen_format(cilizca) is None
 
 
+def test_kirilimsiz_adaylar_yalnizca_eksik_olculmusu_verir(yol: Path, aday):
+    """Yeniden sondaj kuyruğu: kırılımı olan aday listeye girmemeli."""
+    aday("Q1", "Eski_Olcum")
+    aday("Q2", "Yeni_Olcum")
+    _olcum_yaz(yol, "Q1", "en", izlenme=5_000)  # kırılımsız (DW-52 öncesi)
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid="Q2",
+            dil="en",
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=50,
+            alakali=30,
+            medyan_izlenme=5_000,
+            alakali_shorts=10,
+            medyan_izlenme_shorts=900,
+            alakali_uzun=20,
+            medyan_izlenme_uzun=8_000,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+        ),
+    )
+
+    kuyruk = bosluk.kirilimsiz_adaylar(yol, 10)
+    assert [k["qid"] for k in kuyruk] == ["Q1"]
+
+
+def test_yeniden_sondaj_adayi_kuyruktan_dusurur(yol: Path, aday):
+    """Kuyruk **en son** ölçüme bakıyor: tazelenen aday tekrar gelmemeli.
+
+    `arz` anahtarı (qid, dil, an) olduğu için yeniden sondaj eski satırı
+    silmiyor, yenisini ekliyor. Kuyruk eski satıra bakarsa aynı adayı her gün
+    yeniden sondalar — 102 birim, sonsuza kadar.
+    """
+    aday("Q1", "Eski_Olcum")
+    _olcum_yaz(yol, "Q1", "en", izlenme=5_000)
+    assert len(bosluk.kirilimsiz_adaylar(yol, 10)) == 1
+
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid="Q1",
+            dil="en",
+            sorgu="x",
+            an=(SIMDI + timedelta(days=1)).isoformat(),
+            donen=50,
+            alakali=30,
+            medyan_izlenme=5_000,
+            alakali_shorts=10,
+            medyan_izlenme_shorts=900,
+            alakali_uzun=20,
+            medyan_izlenme_uzun=8_000,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+        ),
+    )
+    assert bosluk.kirilimsiz_adaylar(yol, 10) == []
+
+
 def test_tek_gozlem_yeterli():
     """Eşik ölçümsüzlüğü eliyor, cılız ölçümü değil — bir gözlem skorlanır."""
     tek = bosluk.ArzOlcumu(

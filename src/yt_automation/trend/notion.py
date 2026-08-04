@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -87,16 +88,16 @@ def database_al() -> str:
     return kimlik
 
 
-def _istek(yol: str, govde: dict, token: str) -> dict:
+def _istek(yol: str, govde: dict | None, token: str, *, yontem: str = "POST") -> dict:
     istek = urllib.request.Request(
         f"{TABAN}{yol}",
-        data=json.dumps(govde).encode(),
+        data=json.dumps(govde).encode() if govde is not None else None,
         headers={
             "Authorization": f"Bearer {token}",
             "Notion-Version": SURUM,
             "Content-Type": "application/json",
         },
-        method="POST",
+        method=yontem,
     )
     try:
         with urllib.request.urlopen(istek, timeout=30) as yanit:
@@ -144,6 +145,33 @@ def _aktarilanlar(yol: Path) -> set[str]:
         return {s["video_id"] for s in baglanti.execute("SELECT video_id FROM aktarim")}
     finally:
         baglanti.close()
+
+
+def _aktarim_sayfalari(yol: Path) -> dict[str, str]:
+    """`anahtar → sayfa_url` — daha önce yazılmış sayfaları geri bulmak için."""
+    baglanti = depo.baglan(yol)
+    try:
+        return {
+            s["video_id"]: s["sayfa_url"]
+            for s in baglanti.execute(
+                "SELECT video_id, sayfa_url FROM aktarim "
+                "WHERE hedef='notion' AND sayfa_url IS NOT NULL"
+            )
+            if s["sayfa_url"]
+        }
+    finally:
+        baglanti.close()
+
+
+def sayfa_kimligi(url: str) -> str | None:
+    """Notion sayfa URL'inden 32 haneli kimliği çıkarır.
+
+    URL biçimi `.../Baslik-<32 hane hex>`; başlık kısmı Türkçe karakterlerde
+    değişebiliyor ama kimlik sabit. Kimlik bulunamazsa `None` — uydurulmuş bir
+    kimliğe PATCH atmak başka bir sayfayı bozabilir.
+    """
+    son = url.rstrip("/").rsplit("-", 1)[-1].rsplit("/", 1)[-1]
+    return son if len(son) == 32 and all(c in "0123456789abcdef" for c in son.lower()) else None
 
 
 def _aktarimi_yaz(yol: Path, video_id: str, sayfa_url: str, an: str) -> None:
@@ -541,5 +569,102 @@ def bosluklari_aktar(
         _aktarimi_yaz(yol, _bosluk_anahtari(kayit), sayfa_url, an.isoformat())
         sonuc.yazilan += 1
         sonuc.sayfalar.append(sayfa_url)
+
+    return sonuc
+
+
+# Notion API saniyede ~3 istek kabul ediyor; sayfa başına iki çağrı (oku +
+# yaz) yapıldığı için araya bekleme konuyor. DW-55'te Wikipedia 429 döndürdüğü
+# gün öğrenildi: hız sınırını denemeyle bulmak, çalışan bir işi ortasında
+# kaybetmek demek.
+BEKLEME_SN = 0.35
+
+# İnsanın dokunmadığı tek durum. Toplu güncelleme yalnızca bunu değiştiriyor:
+# birinin "İnceleniyor" ya da "Seçildi" yaptığı bir adayı otomasyon "Elendi"ye
+# çekerse insan kararını ezmiş olur ve geri alması elle iş.
+DOKUNULMAMIS_DURUM = "Yeni"
+ELENDI_DURUMU = "Elendi"
+
+
+@dataclass
+class GuncellemeSonucu:
+    guncellenen: int = 0
+    elendi: int = 0
+    sayfasiz: int = 0
+    hatalar: list[str] = field(default_factory=list)
+
+
+def bosluklari_guncelle(
+    yol: Path,
+    *,
+    adaylar: list[bosluk.Bosluk],
+    token: str,
+    ele: bool = False,
+    bekleme: float = BEKLEME_SN,
+) -> GuncellemeSonucu:
+    """Daha önce yazılmış sayfaların format ve durum alanlarını tazeler.
+
+    Neden gerekiyor: `Önerilen format` DW-58'de eklendi, ondan önce yazılmış
+    sayfalarda alan **boş**. Yeniden ölçüm (`kirilimsiz_adaylar`) kırılımı
+    dolduruyor ama Notion'daki sayfa kendiliğinden güncellenmiyor — aktarım
+    tek yönlü ve bir kez çalışıyor.
+
+    `ele=True` ise kapıyı geçemeyen aday `Elendi` durumuna çekilir. Yalnızca
+    durumu hâlâ `DOKUNULMAMIS_DURUM` olanlar; insanın ellediği satır
+    korunuyor.
+
+    Gövde metni **yeniden yazılmıyor**: `children` güncellemesi mevcut blokları
+    silip yeniden kurmayı gerektiriyor ve bu, sayfaya insan eliyle eklenmiş
+    notları siler. Alan güncellemesi kayıpsız, gövde güncellemesi değil.
+    """
+    sonuc = GuncellemeSonucu()
+    sayfalar = _aktarim_sayfalari(yol)
+
+    for kayit in adaylar:
+        url = sayfalar.get(_bosluk_anahtari(kayit))
+        if not url:
+            sonuc.sayfasiz += 1
+            continue
+        kimlik = sayfa_kimligi(url)
+        if not kimlik:
+            sonuc.hatalar.append(f"{kayit.baslik[:60]}: sayfa kimliği okunamadı ({url})")
+            continue
+
+        try:
+            mevcut = _istek(f"/pages/{kimlik}", None, token, yontem="GET")
+            time.sleep(bekleme)
+        except NotionHatasi as hata:
+            sonuc.hatalar.append(f"{kayit.baslik[:60]}: {hata}")
+            continue
+
+        secili = (mevcut.get("properties", {}).get("Durum", {}) or {}).get("select") or {}
+        durum = secili.get("name")
+
+        # Alanlar `bosluk_ozellikleri`'nden **seçilerek** alınıyor, elle
+        # kurulmuyor: format eşlemesi ("shorts" → "Shorts") tek yerde kalsın,
+        # yoksa aktarım ile güncelleme zamanla birbirinden ayrışır. Buradan
+        # alınmayan alanlar (Tespit tarihi, Kaynak sayısı, Başlık…) bilerek
+        # dokunulmadan bırakılıyor — `gun`/`kaynak_sayisi` bu yüzden boş.
+        tam = bosluk_ozellikleri(kayit, gun="", kaynak_sayisi=None, durum=durum or "Yeni")
+        ozellikler = {
+            "Önerilen format": tam["Önerilen format"],
+            "Hedef kanal": tam["Hedef kanal"],
+            "Arz": tam["Arz"],
+            "Boşluk skoru": tam["Boşluk skoru"],
+        }
+        elendi = False
+        if ele and durum == DOKUNULMAMIS_DURUM and bosluk.red_gerekcesi(kayit) is not None:
+            ozellikler["Durum"] = {"select": {"name": ELENDI_DURUMU}}
+            elendi = True
+
+        try:
+            _istek(f"/pages/{kimlik}", {"properties": ozellikler}, token, yontem="PATCH")
+            time.sleep(bekleme)
+        except NotionHatasi as hata:
+            sonuc.hatalar.append(f"{kayit.baslik[:60]}: {hata}")
+            continue
+
+        sonuc.guncellenen += 1
+        sonuc.elendi += int(elendi)
 
     return sonuc

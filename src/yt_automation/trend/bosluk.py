@@ -760,6 +760,46 @@ class ArastirmaSonucu:
         return satir
 
 
+def kirilimsiz_adaylar(yol: Path, limit: int = 10) -> list[dict]:
+    """Ölçülmüş ama **format kırılımı olmayan** adaylar — yeniden sondaj kuyruğu.
+
+    DW-52 öncesi yapılan sondajlar `contentDetails` istemiyordu, yani o
+    adayların Shorts/uzun ayrımı yok ve `bicim_skorla` onlar için hiçbir zaman
+    skor üretemez. Kırılım geriye dönük hesaplanamaz: ayrım video sürelerinden
+    çıkıyor ve o sondajların video kimlikleri saklanmadı. Tek yol aynı sorguyu
+    yeniden sormak — aday başına yine `SONDAJ_MALIYETI`.
+
+    `sondajlanmamis_adaylar`'ın tersi bir kuyruk: orası "hiç ölçülmemiş"i
+    arıyor, burası "eksik ölçülmüş"ü. Hedef pazar filtresi **yok** — bu bir
+    keşif kuyruğu değil, geçmişi tamamlama işi; hangi dilde ölçüldüyse orada
+    tamamlanıyor.
+
+    Sıra en yeni ölçümden eskiye: iş birden fazla güne yayıldığında (sondaj
+    tavanı) önce hâlâ güncel olması muhtemel adaylar tamamlansın.
+    """
+    baglanti = depo.baglan(yol)
+    try:
+        return [
+            dict(s)
+            for s in baglanti.execute(
+                """
+                SELECT a.qid, a.dil, m.baslik
+                FROM arz a
+                JOIN makale m ON m.qid = a.qid AND m.dil = a.dil
+                WHERE a.an = (
+                    SELECT MAX(i.an) FROM arz i WHERE i.qid = a.qid AND i.dil = a.dil
+                )
+                  AND a.alakali_shorts IS NULL
+                ORDER BY a.an DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        ]
+    finally:
+        baglanti.close()
+
+
 def arastir(
     istemci,
     sayac: kota.KaliciSayac,
@@ -769,16 +809,25 @@ def arastir(
     tavan: int = SONDAJ_KOTA_TAVANI,
     an: datetime | None = None,
     oncelikli_qidler: set[str] | None = None,
+    adaylar: list[dict] | None = None,
 ) -> ArastirmaSonucu:
-    """Sondajlanmamış adayları sırayla sondalar ve ölçümleri yazar.
+    """Adayları sırayla sondalar ve ölçümleri yazar.
 
     Bir adayın hatası araştırmayı bitirmez — DW-28'de aynı kararı bölgeler
     için vermiştik ve ilk canlı koşumda işe yaradı.
+
+    `adaylar` verilmezse kuyruk `sondajlanmamis_adaylar`'dan gelir. Verilirse
+    o kuyruk sondalanır — `kirilimsiz_adaylar` ile geçmişi tamamlamak için.
+    Sondaj/yazma/kota mantığı tek yerde kalsın diye ikinci bir döngü
+    yazılmıyor: iki kuyruğun **seçimi** farklı, işlenmesi aynı.
     """
     sonuc = ArastirmaSonucu()
     rezerve = kota.video_basina_maliyet()
 
-    for aday in sondajlanmamis_adaylar(yol, limit, oncelikli_qidler=oncelikli_qidler):
+    if adaylar is None:
+        adaylar = sondajlanmamis_adaylar(yol, limit, oncelikli_qidler=oncelikli_qidler)
+
+    for aday in adaylar:
         if sayac.surec_harcamasi + SONDAJ_MALIYETI > tavan:
             sonuc.kota_bitti = True
             break

@@ -235,6 +235,88 @@ def _bosluk_arastir(*, limit: int, kuru: bool) -> int:
     return 1 if sonuc.sondaj == 0 else 0
 
 
+def _bosluk_tazele(*, limit: int, tavan: int, kuru: bool) -> int:
+    """DW-52 öncesi ölçülmüş adayları yeniden sondalar — format kırılımı için.
+
+    Ayrı komut olmasının sebebi bütçe: bu bir keşif değil **geçmişi tamamlama**
+    işi ve gece hunisinin sondaj kuyruğuyla aynı tavanı paylaşıyor. Aynı komuta
+    sıkıştırılsaydı ya geçmiş hiç tamamlanmazdı (yeni adaylar hep önde) ya da
+    keşif dururdu. Ayrı komut, kararı çalıştırana bırakıyor.
+    """
+    yol = depo.varsayilan_yol()
+    adaylar = bosluk.kirilimsiz_adaylar(yol, limit)
+    sayac = kota.KaliciSayac(yol, surec=bosluk.SUREC)
+
+    if not adaylar:
+        print("Kırılımsız aday yok — geçmiş tamamlanmış.")
+        return 1
+
+    kalan_tavan = tavan - sayac.surec_harcamasi
+    sigan = max(kalan_tavan // bosluk.SONDAJ_MALIYETI, 0)
+    yapilacak = min(len(adaylar), sigan)
+
+    if kuru:
+        print("KURU KOŞUM — format kırılımı için yeniden sondaj")
+        print(f"  {len(adaylar)} kırılımsız aday, tavana {sigan} sondaj sığıyor → {yapilacak}")
+        print(f"  tahmini maliyet: {yapilacak * bosluk.SONDAJ_MALIYETI} birim")
+        print(f"  boşluk bugün: {sayac.surec_harcamasi}/{tavan} birim (tavan)")
+        print(f"  ortak kota: {sayac.ozet()}")
+        for aday in adaylar[:5]:
+            print(f"    · {aday['dil']}: {aday['baslik'].replace('_', ' ')}")
+        return 0
+
+    try:
+        istemci = _istemci_kur()
+    except RuntimeError as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    sonuc = bosluk.arastir(istemci, sayac, yol, tavan=tavan, adaylar=adaylar)
+    print(sonuc.ozet())
+    kalan = len(bosluk.kirilimsiz_adaylar(yol, 10_000))
+    print(f"kırılımsız kalan: {kalan} aday")
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    return 1 if sonuc.sondaj == 0 else 0
+
+
+def _trend_guncelle(*, ele: bool, kuru: bool) -> int:
+    """Notion'daki mevcut sayfaların format ve durum alanlarını tazeler."""
+    yol = depo.varsayilan_yol()
+    kayitlar = bosluk.bosluklar(yol)
+    if not kayitlar:
+        print("Ölçüm yok — önce `ytoto bosluk arastir` çalıştırın.")
+        return 1
+
+    elenecek = [k for k in kayitlar if bosluk.red_gerekcesi(k) is not None]
+    if kuru:
+        from collections import Counter
+
+        dagilim = Counter(k.onerilen_format or "Belirsiz" for k in kayitlar)
+        print("KURU KOŞUM — Notion alan güncellemesi (YouTube kotası harcamaz)")
+        print(f"  {len(kayitlar)} aday güncellenecek")
+        print(f"  format dağılımı: {dict(dagilim)}")
+        if ele:
+            print(f"  kapıyı geçemeyen {len(elenecek)} aday 'Elendi' olacak")
+            print("  (yalnızca durumu hâlâ 'Yeni' olanlar — insanın ellediği satır korunur)")
+        return 0
+
+    try:
+        token = notion.token_al()
+    except RuntimeError as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    sonuc = notion.bosluklari_guncelle(yol, adaylar=kayitlar, token=token, ele=ele)
+    print(
+        f"{sonuc.guncellenen} sayfa güncellendi · {sonuc.elendi} 'Elendi' · "
+        f"{sonuc.sayfasiz} aday Notion'a hiç yazılmamış (atlandı)"
+    )
+    for hata in sonuc.hatalar[:5]:
+        print(f"  hata: {hata}", file=sys.stderr)
+    return 1 if sonuc.guncellenen == 0 else 0
+
+
 def _bosluk_rapor(*, limit: int) -> int:
     kayitlar = bosluk.bosluklar(depo.varsayilan_yol(), limit=limit)
     if not kayitlar:
@@ -665,6 +747,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Daha önce sınıflandırılmışları da yeniden hesapla (LLM kararları korunur)",
     )
 
+    guncelle = trend_altlar.add_parser(
+        "guncelle",
+        help="Notion'daki mevcut sayfaların format/durum alanlarını tazele (kota harcamaz)",
+    )
+    guncelle.add_argument(
+        "--ele",
+        action="store_true",
+        help="Kapıyı geçemeyen adayları 'Elendi' yap (yalnızca durumu hâlâ 'Yeni' olanlar)",
+    )
+    guncelle.add_argument("--kuru", action="store_true", help="Hiç yazma, ne yapacağını bildir")
+
     aktar = trend_altlar.add_parser(
         "aktar", help="Günlük ilk-N adayı Notion'a yaz (YouTube kotası harcamaz)"
     )
@@ -695,6 +788,22 @@ def main(argv: list[str] | None = None) -> int:
     ba.add_argument(
         "--kuru", action="store_true", help="Hiç çağrı yapma, sondaj sayısını ve maliyeti bildir"
     )
+
+    bt = bosluk_altlar.add_parser(
+        "tazele",
+        help=f"Kırılımsız (DW-52 öncesi) ölçümleri yeniden sonda ({bosluk.SONDAJ_MALIYETI} birim)",
+    )
+    bt.add_argument("--limit", type=int, default=10, help="En fazla kaç sondaj")
+    bt.add_argument(
+        "--tavan",
+        type=int,
+        default=bosluk.SONDAJ_KOTA_TAVANI,
+        help=(
+            f"Sondaj kota tavanı (varsayılan {bosluk.SONDAJ_KOTA_TAVANI}). "
+            "Geçmişi tamamlama gibi tek seferlik işler için bilerek yükseltilebilir."
+        ),
+    )
+    bt.add_argument("--kuru", action="store_true", help="Hiç çağrı yapma, ne yapacağını bildir")
 
     br = bosluk_altlar.add_parser("rapor", help="Ölçülmüş adayları skora göre sırala (ücretsiz)")
     br.add_argument("--limit", type=int, default=25)
@@ -770,6 +879,8 @@ def main(argv: list[str] | None = None) -> int:
             return _trend_bolgeler(adet=args.adet, pencere=args.pencere)
         if args.trend_komutu == "siniflandir":
             return _trend_siniflandir(yeniden=args.yeniden)
+        if args.trend_komutu == "guncelle":
+            return _trend_guncelle(ele=args.ele, kuru=args.kuru)
         if args.trend_komutu == "aktar":
             return _trend_aktar(
                 adet=args.adet, kuru=args.kuru, zorla=args.zorla, kaynak_turu=args.kaynak
@@ -784,6 +895,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.komut == "bosluk":
         if args.bosluk_komutu == "arastir":
             return _bosluk_arastir(limit=args.limit, kuru=args.kuru)
+        if args.bosluk_komutu == "tazele":
+            return _bosluk_tazele(limit=args.limit, tavan=args.tavan, kuru=args.kuru)
         if args.bosluk_komutu == "rapor":
             return _bosluk_rapor(limit=args.limit)
     if args.komut == "nis":
