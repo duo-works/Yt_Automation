@@ -118,3 +118,115 @@ adayı, büyük pazarın vasatına artık yenilmiyor.
 %34'ü (73 adayın 25'i) `ar` + `hi` dillerine gidiyor ve iki dil de yapısal
 olarak kazanamıyor. Bu bir eşik sorusu değil kapsam sorusu: "Almanca'da yükselen
 konu Türkçe yapılmaya değer mi?" cevabına bağlı. Ayrı karar.
+→ **Kapandı: DW-53.** Sondaj hedef pazarlara (en+es) çevrildi, radar korundu,
+başka dilde yükselen konu QID köprüsüyle hedef pazarda ölçülüyor.
+
+## Güncelleme — kalibre kapısı format başına çalışıyor (DW-58, 2026-08-03)
+
+Yukarıdaki göreli kapı **birleşik** arz üzerinden kuruluydu; DW-52 arzı Shorts
+ve uzun olarak ayırınca bu bir kaçırma kaynağına dönüştü: uzun tarafı doymuş
+ama Shorts tarafı bomboş bir konu, iki raf tek potada eritildiği için "orta
+arz" görünüp eleniyordu. Yanlış atama değil — konu öneri aşamasına bile
+varamıyordu.
+
+Kapı artık format başına ölçüyor ve **en az bir format** eşiği geçiyorsa aday
+geçiyor. Kritik ayrıntı: her formatın taban çizgisi **ayrı** tutuluyor. Sebebi
+bu ADR'nin kendi gerekçesinin tekrarı — Shorts sistematik olarak uzun videodan
+çok daha fazla izlenme alıyor, yani iki format aynı potaya konsaydı Shorts
+tarafı topluca "kötü" görünür ve kapı neredeyse hep uzunu seçerdi. Dil
+yanlılığı için verilen kararın birebir aynısı, bir eksen aşağıda.
+
+Kabul edilen yeni kısıt: örneklem artık **dil × format** olarak bölünüyor, yani
+`ASGARI_TABAN_ORNEK` daha geç doluyor. Dolmadığı sürece format kalibresi
+üretilmiyor ve karar birleşik skora düşüyor — kaba ama doğru; yetersiz
+örneklemden format skoru uydurmak yanlış olurdu.
+
+Talep kapısı (`ASGARI_TALEP`) **formata bölünmedi** ve bölünemez: Wikipedia
+okunması konu seviyesinde, "kaçı 60 saniyelik ister" bilgisini taşımıyor.
+
+### İlk canlı ölçüm — 2026-08-04, 114 sondajlanmış aday
+
+Otomasyon DW-58 ucuna taşındıktan (ADR-0008, `tazele`) sonraki ilk koşum. 20
+yeni sondajın hepsi kırılımlı geldi ve en+es'in format tabanı tek koşumda doldu
+(en 13, es 8 aday — `ASGARI_TABAN_ORNEK`'in iki katı).
+
+| Kapı | Geçen |
+|---|---|
+| birleşik (DW-58 öncesi) | 4 / 114 |
+| **format başına (DW-58 sonrası)** | **5 / 114** |
+| yalnız format kapısıyla geçen | **1** |
+| yalnız birleşik kapıyla geçen | 0 |
+
+Asıl bulgu sayının kendisi değil, **yönü**. Format kalibresi üretilebilen üç
+adayın üçünde de öneri Shorts ve uzun kalibresi eşiğin altında:
+
+| Aday | birleşik | shorts | uzun |
+|---|---|---|---|
+| Fritz Gerlich (es) | 2,22 | **3,06** | 1,95 |
+| Ernst Hanfstaengl (es) | 2,09 | **2,58** | 1,47 |
+| Fritz Gerlich (en) | 1,50 | **2,26** | 1,50 |
+
+Üçünün de uzun rafı doymuş, Shorts rafı boş. Birleşik kapı bu ikisini tek
+potada eritince Fritz Gerlich'in İngilizce ölçümü 1,50 ile eşiğin altında kalıp
+**eleniyordu** — yukarıdaki gerekçenin ta kendisi, artık varsayım değil ölçüm.
+Diğer ikisi geçiyordu ama hangi formatla girileceği bilgisi yoktu.
+
+#### Aynı koşumda bulunan kusur: sıfır gözlem ≠ boş raf
+
+İlk ölçüm turunda kazanan aday `Lise Lesèvre` (en) görünüyordu: birleşik 1,09,
+Shorts kalibresi 3,30. İncelenince sebebi çıktı — o sondajda **hiç Shorts
+gözlemi yoktu** (50 sonuçtan yalnızca 2'si alakalı, 0'ı Shorts).
+`bicim_skorla` arz terimlerini gözlemden kuruyor; gözlem yoksa arz sıfır
+çıkıyor ve konu sahte bir zirveye oturuyor.
+
+Bu, `ArzOlcumu.gecerli`'nin birleşik ölçüm için zaten yazdığı ilkenin format
+seviyesinde uygulanmamış hâliydi: *"hiç sonuç dönmedi" ≠ "hiçbiri alakalı
+değil"; ikisini karıştırmak bize var olmayan bir fırsat gösterir.* Etki
+sistematik ve yön olarak en kötüsü: arama ne kadar cılızsa bir formatın gözlemi
+o kadar sıfıra yakın, skoru o kadar yüksek — yani huni, YouTube'un zar zor
+indekslediği konuları tercihen zirveye taşıyordu.
+
+`ASGARI_FORMAT_GOZLEM` ile kapatıldı. Düzeltmenin ikinci ve daha önemli etkisi
+tekil adayda değil **taban çizgisinde**: sahte ölçüm `en × shorts` tabanını da
+kirletiyordu; çıkarılınca o dildeki diğer adayların kalibresi düzeldi ve
+gerçek bir aday (Fritz Gerlich en) eşiği geçti. Yukarıdaki tablo düzeltme
+sonrasıdır.
+
+Kabul edilen kısıt netleşti: DW-53 sondajı en+es'e daralttığı için hedef dışı
+dillerdeki eski adaylar (bugün 2 `tr` aday) format kalibresi **hiç**
+üretemeyecek ve birleşik skora düşmeye devam edecek. Onlar için format önerisi
+boş kalıyor — yanlış öneri üretmektense boş bırakmak doğru, ama Notion'da
+"önerisiz aday" diye bir sınıf oluşuyor.
+
+Örneklem küçük (21 kalibre edilebilir aday, tek koşum) ve bu bir **geri çağırma**
+ölçümü, değer ölçümü değil: Fritz Gerlich'in iyi bir video olup olmadığını
+bilmiyoruz, yalnızca huninin onu insan bakmadan atmayı bıraktığını biliyoruz.
+
+#### Aynı gün, 81 kalibre edilebilir aday — yukarıdaki sayılar oynadı
+
+Eski ölçümler yeniden sondalanıp (`bosluk tazele`) örneklem 21'den 81'e
+çıkınca tablo değişti:
+
+| | 21 aday | 81 aday |
+|---|---|---|
+| yalnız format kapısıyla geçen | 1 | **2** |
+| yalnız birleşik kapıyla geçen | 0 | **1** |
+
+**İki ders var ve ikincisi daha önemli.**
+
+Birincisi: kapı tek yönlü değil. `es Fritz Gerlich` birleşik 2,03 ile eşiği
+geçiyordu ama iki rafın **hiçbirinde** yeterli değil (shorts 1,81, uzun 1,58) —
+harmanlanmış ortalama onu kayırıyormuş. Format kapısı bunu doğru şekilde
+eliyor. "Daha çok aday geçirir" değil, "iki yönde de daha keskin ölçer".
+
+İkincisi: **ince taban çizgisi kalibreyi oynatıyor.** Aynı `es Fritz Gerlich`
+8 adaylık es tabanında shorts 3,06 iken, taban 17 adaya çıkınca 1,81'e düştü.
+Yani yukarıdaki üç satırlık kanıt tablosu ince bir tabandan okunmuştu.
+`ASGARI_TABAN_ORNEK = 5` istatistiksel güven için değil, **hiç yoktan iyi**
+olduğu için seçilmişti; bu ölçüm o eşiğin gerçekte ne kadar gevşek olduğunu
+gösteriyor. Eşiğin yükseltilmesi ayrı bir karar ve daha çok veri istiyor —
+ama bugünden bilinen şu: **5 örneklemli bir tabandan okunan kalibre
+raporlanabilir bir sayı değil, geçici bir tahmindir.**
+
+Ölçüm hâlâ tamamlanmadı: 114 adayın 33'ü kırılımsız (günlük sondaj tavanı).
+Tamamlandığında bu bölüm son kez güncellenecek.

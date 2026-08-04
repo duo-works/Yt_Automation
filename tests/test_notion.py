@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from yt_automation import cli, depo
-from yt_automation.trend import kaynak, notion
+from yt_automation.trend import bosluk, kaynak, notion
 
 SIMDI = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 
@@ -15,19 +15,35 @@ SIMDI = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 class SahteNotion:
     """`notion._istek` yerine geçer; gönderilen gövdeleri toplar."""
 
-    def __init__(self, *, hata: Exception | None = None, her_ikincisi: bool = False):
+    def __init__(
+        self,
+        *,
+        hata: Exception | None = None,
+        her_ikincisi: bool = False,
+        mevcut_durum: str = "Yeni",
+    ):
         self.govdeler: list[dict] = []
+        self.cagrilar: list[tuple[str, str, dict]] = []
         self.hata = hata
         self.her_ikincisi = her_ikincisi
+        self.mevcut_durum = mevcut_durum
 
-    def __call__(self, yol: str, govde: dict, token: str) -> dict:
+    def __call__(self, yol: str, govde: dict, token: str, *, yontem: str = "POST") -> dict:
         self.govdeler.append(govde)
+        self.cagrilar.append((yontem, yol, govde))
+        if yontem == "GET":
+            # Güncelleme yolu önce sayfayı okuyor; mevcut durum buradan gelir.
+            return {"properties": {"Durum": {"select": {"name": self.mevcut_durum}}}}
         if self.hata and not self.her_ikincisi:
             raise self.hata
         if self.hata and len(self.govdeler) % 2 == 1:
             raise self.hata
         n = len(self.govdeler)
-        return {"url": f"https://notion.so/sayfa-{n}", "id": f"id-{n}"}
+        # URL gerçek biçimde: sonda 32 hane hex kimlik. Sahte "sayfa-1" gibi
+        # bir URL üretirse `sayfa_kimligi` onu reddeder ve güncelleme yolu
+        # testte sessizce hiç çalışmaz.
+        kimlik = f"{n:032x}"
+        return {"url": f"https://notion.so/Sayfa-{kimlik}", "id": kimlik}
 
 
 def govde_yazisi(bloklar: list[dict]) -> str:
@@ -488,3 +504,212 @@ def test_cli_cart_kaynagi_secilebilir(yol: Path, olcum, monkeypatch, capsys):
     olcum("v1")
     assert cli.main(["trend", "aktar", "--kuru", "--kaynak", "youtube-chart"]) == 0
     assert "kaynak: youtube-chart" in capsys.readouterr().out
+
+
+def test_govde_gecen_formati_ve_kendi_kalibresini_gosterir(yol: Path, wiki_aday, pazar):
+    """Kapı format başına çalışıyor (DW-58): aday BİRLEŞİK kalibresi eşiğin
+    altındayken de geçmiş olabilir — tek formatta parlıyorsa.
+
+    Yalnızca birleşik değeri göstermek operatöre eşiğin altında bir sayı
+    gösterip "bu aday neden burada?" dedirtirdi. Bu test o sapmayı kilitliyor.
+    """
+    from yt_automation.trend import bosluk
+
+    # Format tabanı: her iki rafta da orta yoğun altı aday.
+    for i in range(6):
+        wiki_aday(f"T{i}", f"taban_{i}", okunma=40_000)
+        _kirilim_yaz(yol, f"T{i}", shorts_izlenme=200_000 * 2**i, uzun_izlenme=100_000 * 2**i)
+    wiki_aday("FIRSAT", "Shortsta_Bos", okunma=9_000)
+    _kirilim_yaz(yol, "FIRSAT", shorts_izlenme=400, shorts_alakali=2, uzun_izlenme=900_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "FIRSAT")
+    metin = govde_yazisi(notion.bosluk_govdesi(kayit, kaynak.dosyayi_oku(yol, "FIRSAT")))
+
+    assert "FORMAT BAŞINA" in metin
+    assert "Shorts formatında eşiği geçti" in metin
+    assert "kendi taban çizgisine" in metin
+
+
+def _kirilim_yaz(yol: Path, qid: str, *, shorts_izlenme, uzun_izlenme, shorts_alakali=20):
+    from yt_automation.trend import bosluk
+
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid=qid,
+            dil="en",
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=50,
+            alakali=shorts_alakali + 20,
+            medyan_izlenme=(shorts_izlenme + uzun_izlenme) // 2,
+            medyan_yas_gun=300,
+            medyan_abone=5_000,
+            harcanan=102,
+            alakali_shorts=shorts_alakali,
+            medyan_izlenme_shorts=shorts_izlenme,
+            alakali_uzun=20,
+            medyan_izlenme_uzun=uzun_izlenme,
+        ),
+    )
+
+
+# --- Mevcut sayfaların güncellenmesi (format geri doldurma) -----------------
+#
+# `Önerilen format` DW-58'de eklendi; ondan önce yazılmış sayfalarda alan boş.
+# Aktarım tek yönlü ve bir kez çalıştığı için sayfa kendiliğinden düzelmiyor.
+
+
+def test_sayfa_kimligi_urlden_okunur():
+    url = "https://app.notion.com/p/Lise-Les-vre-3b29bfc93b2e8118bf7fc314cacdee57"
+    assert notion.sayfa_kimligi(url) == "3b29bfc93b2e8118bf7fc314cacdee57"
+
+
+def test_bozuk_url_kimlik_uretmez():
+    """Uydurulmuş kimliğe PATCH atmak **başka** bir sayfayı bozar."""
+    assert notion.sayfa_kimligi("https://app.notion.com/p/Baslik") is None
+    assert notion.sayfa_kimligi("") is None
+
+
+def _aktarilmis_kur(yol: Path, wiki_aday, pazar, monkeypatch) -> SahteNotion:
+    """Bir aday yazılmış hâle getirilir; dönen sahte sonraki testte kullanılır."""
+    pazar()
+    wiki_aday("FIRSAT", "Firsat", medyan_izlenme=900, okunma=9_000)
+    sahte = SahteNotion()
+    monkeypatch.setattr(notion, "_istek", sahte)
+    notion.bosluklari_aktar(
+        yol,
+        adaylar=notion.aktarilmamis_bosluklar(yol, zorla=True),
+        database="db",
+        token="t",
+        an=SIMDI,
+    )
+    return sahte
+
+
+def test_guncelleme_format_alanini_yazar(yol: Path, wiki_aday, pazar, monkeypatch):
+    _aktarilmis_kur(yol, wiki_aday, pazar, monkeypatch)
+    sahte = SahteNotion()
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    sonuc = notion.bosluklari_guncelle(
+        yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0
+    )
+
+    assert sonuc.guncellenen > 0
+    yamalar = [g for y, _, g in sahte.cagrilar if y == "PATCH"]
+    assert yamalar, "PATCH isteği gitmeli"
+    assert "Önerilen format" in yamalar[0]["properties"]
+    assert "Hedef kanal" in yamalar[0]["properties"]
+
+
+def test_guncelleme_govdeyi_yeniden_yazmaz(yol: Path, wiki_aday, pazar, monkeypatch):
+    """Gövde güncellemesi insanın sayfaya eklediği notları siler — dokunulmuyor."""
+    _aktarilmis_kur(yol, wiki_aday, pazar, monkeypatch)
+    sahte = SahteNotion()
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    notion.bosluklari_guncelle(yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0)
+
+    for yontem, _, govde in sahte.cagrilar:
+        if yontem == "PATCH":
+            assert "children" not in govde
+
+
+def test_kapiyi_gecemeyen_elendi_olur(yol: Path, wiki_aday, pazar, monkeypatch):
+    _aktarilmis_kur(yol, wiki_aday, pazar, monkeypatch)
+    # Taban adayları kapıyı geçmiyor; `--ele` onları Elendi'ye çekmeli.
+    sahte = SahteNotion(mevcut_durum="Yeni")
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    sonuc = notion.bosluklari_guncelle(
+        yol, adaylar=bosluk.bosluklar(yol), token="t", ele=True, bekleme=0
+    )
+
+    assert sonuc.elendi > 0
+    durumlar = [
+        g["properties"]["Durum"]["select"]["name"]
+        for y, _, g in sahte.cagrilar
+        if y == "PATCH" and "Durum" in g["properties"]
+    ]
+    assert durumlar and all(d == notion.ELENDI_DURUMU for d in durumlar)
+
+
+def test_insanin_elledigi_satir_elenmez(yol: Path, wiki_aday, pazar, monkeypatch):
+    """`Seçildi` yapılmış bir adayı otomasyon `Elendi`ye çekerse kararı ezer."""
+    _aktarilmis_kur(yol, wiki_aday, pazar, monkeypatch)
+    sahte = SahteNotion(mevcut_durum="Seçildi")
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    sonuc = notion.bosluklari_guncelle(
+        yol, adaylar=bosluk.bosluklar(yol), token="t", ele=True, bekleme=0
+    )
+
+    assert sonuc.elendi == 0
+    for yontem, _, govde in sahte.cagrilar:
+        if yontem == "PATCH":
+            assert "Durum" not in govde["properties"]
+
+
+def test_yazilmamis_aday_atlanir(yol: Path, wiki_aday, pazar, monkeypatch):
+    """Notion'a hiç gitmemiş adaya PATCH atılamaz — sayfası yok."""
+    pazar()
+    wiki_aday("YENI", "Hic_Gitmedi", medyan_izlenme=900, okunma=9_000)
+    sahte = SahteNotion()
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    sonuc = notion.bosluklari_guncelle(
+        yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0
+    )
+
+    assert sonuc.guncellenen == 0
+    assert sonuc.sayfasiz > 0
+    assert sahte.cagrilar == []
+
+
+def test_elenen_adaya_kanal_atanmaz(yol: Path, wiki_aday, pazar):
+    """Geçen formatı olsa bile kapıyı geçemeyen adaya kanal yazılmamalı.
+
+    Ölçüldü (2026-08-04): geçen formatı olan 8 adayın 5'i mutlak talep
+    kapısında eleniyordu ve yine de `Hedef kanal` alıyordu. Kanal ataması bir
+    karar; elenmiş adaya karar yazmak o kararı uydurmaktır. Aktarım yolunda
+    görünmüyordu çünkü oraya yalnızca kapıyı geçen aday giriyor — kusur
+    `bosluklari_guncelle` elenmişlere de dokununca ortaya çıktı.
+    """
+    pazar()
+    # Talebi eşiğin altında ama arzı bomboş: format kalibresi yüksek çıkar,
+    # mutlak talep kapısı yine de eler.
+    wiki_aday("ZAYIF", "Talebi_Dusuk", medyan_izlenme=50, okunma=100)
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "ZAYIF")
+
+    assert bosluk.red_gerekcesi(kayit) is not None, "kurulum: aday elenmiş olmalı"
+    p = notion.bosluk_ozellikleri(kayit, gun="2026-08-04", kaynak_sayisi=3)
+    assert p["Hedef kanal"]["select"] is None
+    # Öneri alanı yine dolu: sıralama bilgisi taşıyor, karar taşımıyor.
+    assert p["Önerilen format"]["select"]["name"]
+
+
+def test_copteki_sayfa_guncellenmez(yol: Path, wiki_aday, pazar, monkeypatch):
+    """Silinmiş sayfaya PATCH atmak sessiz kayıp — sayılıp raporlanmalı.
+
+    Gerçek vaka (2026-08-04): mükerrer bir sayfa elle silindi ve defter
+    silineni gösteriyordu. Kontrol olmadan istek başarılı döner, kimse
+    görmez, görünen sayfa bir daha hiç güncellenmezdi.
+    """
+    _aktarilmis_kur(yol, wiki_aday, pazar, monkeypatch)
+
+    class CopteSahte(SahteNotion):
+        def __call__(self, yol_, govde, token, *, yontem="POST"):
+            if yontem == "GET":
+                self.cagrilar.append((yontem, yol_, govde))
+                return {"in_trash": True, "archived": True, "properties": {}}
+            return super().__call__(yol_, govde, token, yontem=yontem)
+
+    sahte = CopteSahte()
+    monkeypatch.setattr(notion, "_istek", sahte)
+
+    sonuc = notion.bosluklari_guncelle(yol, adaylar=bosluk.bosluklar(yol), token="t", bekleme=0)
+
+    assert sonuc.copte > 0
+    assert sonuc.guncellenen == 0
+    assert not [y for y, _, _ in sahte.cagrilar if y == "PATCH"], "çöpteki sayfaya yazılmamalı"

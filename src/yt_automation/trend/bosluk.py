@@ -142,6 +142,28 @@ YAS_AGIRLIGI = 0.5  # eski içerik = zayıf arz, bu yüzden **çıkarılıyor**
 # demek. Altında kalan dil sıralanmıyor — ama sessizce değil, CLI sayıyı basar.
 ASGARI_TABAN_ORNEK = 5
 
+# Bir formatın skorlanabilmesi için o formatta gereken asgari **gözlem**.
+#
+# Sıfır gözlem "raf boş" DEĞİL, "bu raf ölçülmedi" demek. `bicim_skorla` arz
+# terimlerini gözlemden kuruyor; gözlem yoksa arz sıfır çıkıyor ve konu sahte
+# bir zirveye oturuyor. `ArzOlcumu.gecerli` aynı ayrımı birleşik ölçüm için
+# yapıyor — "hiç sonuç dönmedi" ≠ "hiçbiri alakalı değil" — bu onun format
+# karşılığı.
+#
+# Ölçüldü (2026-08-04, ilk canlı kırılımlı koşum): 21 sondajın 20'sinde her iki
+# formatta da gözlem vardı; tek istisna 50 sonuçtan yalnızca 2'si alakalı çıkan
+# `Lise Lesèvre` idi (0 Shorts) ve **hiç Shorts görülmediği için** kapıyı geçen
+# tek aday oydu. Eşiksiz hâl, YouTube'un zar zor indekslediği konuları
+# sistematik olarak zirveye taşıyor: arama ne kadar cılızsa bir formatın gözlemi
+# o kadar sıfıra yakın, skoru o kadar yüksek.
+#
+# ⚠️ Bu eşik ihtiyatlı yönde yanlı: gerçekten zengin bir aramada bir format
+# hiç görünmüyorsa (bol alakalı sonuç, sıfır Shorts) o da gerçek bir boşluk
+# olurdu ve şimdi birleşik skora düşüyor. Uydurulmuş fırsattan iyi. Ayrımı
+# yapabilmek için "genel alaka yüksekken sıfır gözlem" gibi ikinci bir eşik
+# gerekiyor ve onu kalibre edecek veri henüz yok.
+ASGARI_FORMAT_GOZLEM = 1
+
 # Göreli kapı: aday kendi dilinin olağanından kaç MAD daha iyi olmalı.
 #
 # Neden dile göre: skorun mutlak seviyesi fırsatı değil **pazar büyüklüğünü**
@@ -348,19 +370,66 @@ def skorla(olcum: ArzOlcumu, talep: int) -> float | None:
     return talep_puani - arz
 
 
+def bicim_skorla(olcum: ArzOlcumu, talep: int, bicim: str) -> float | None:
+    """Tek bir formatın (`"shorts"` / `"uzun"`) boşluk skoru.
+
+    `skorla()` ile aynı dil, tek farkla: arz tarafı o formatın kendi
+    ölçümünden geliyor. Talep iki formatta da aynı konu — Wikipedia okunması
+    "kaçı 60 saniyelik ister" demiyor, konu seviyesinde.
+
+    Abone ve yaş kırılıma girmiyor: `arz` tablosunda format başına
+    tutulmuyorlar ve sondaj başına 1 birim daha harcamadan tutulamazlar.
+    Ortak terim oldukları için **iki formatın kıyasını** etkilemiyorlar;
+    yalnızca ikisinin de mutlak seviyesini eşit kaydırıyorlar.
+
+    Kırılım ölçülmemişse `None` — eski sondajdan format skoru uydurmak,
+    olmayan bir ölçümü varmış gibi sunmak olurdu. O formatta hiç gözlem yoksa
+    (`< ASGARI_FORMAT_GOZLEM`) da `None`: sıfır gözlem boş raf değil,
+    ölçülmemiş raf.
+    """
+    if not olcum.gecerli:
+        return None
+    if bicim == "shorts":
+        alakali, izlenme = olcum.alakali_shorts, olcum.medyan_izlenme_shorts
+    elif bicim == "uzun":
+        alakali, izlenme = olcum.alakali_uzun, olcum.medyan_izlenme_uzun
+    else:
+        raise ValueError(f"bilinmeyen biçim: {bicim}")
+    if alakali is None or alakali < ASGARI_FORMAT_GOZLEM:
+        return None
+
+    talep_puani = log10(1 + max(talep, 0))
+    arz = IZLENME_AGIRLIGI * log10(1 + (izlenme or 0))
+    arz += ALAKALI_SAYI_AGIRLIGI * log10(1 + alakali)
+    arz += ABONE_AGIRLIGI * log10(1 + (olcum.medyan_abone or 0))
+    arz -= YAS_AGIRLIGI * log10(1 + (olcum.medyan_yas_gun or 0))
+    return talep_puani - arz
+
+
 def onerilen_format(olcum: ArzOlcumu) -> str | None:
-    """Hangi formatın arz tarafı daha boş: `"shorts"`, `"uzun"` ya da `None`.
+    """Ham arz kıyası: hangi formatın rafı daha boş görünüyor.
 
-    Karar tek eksende: alakalı sonuç sayısı + medyan izlenme, format başına
-    log ölçekte toplanıyor (skorun arz tarafıyla aynı dil) ve düşük olan —
-    yani arzı zayıf olan — öneriliyor. Talep iki format için de aynı konu,
-    o yüzden kıyasa girmiyor.
+    ⚠️ **Bu fonksiyon tek başına yanlı** ve DW-58'den beri karar mercii değil.
+    Shorts sistematik olarak uzun videodan çok daha fazla izlenme alıyor, yani
+    ham kıyas neredeyse her konuda "uzun" der — DW-51'de dil için ölçülen
+    yanlılığın format karşılığı. Doğru kıyas `Bosluk.gecen_formatlar`'da:
+    her format **kendi taban çizgisine** göre ölçülüyor.
 
-    `None` iki durumda: kırılım hiç ölçülmedi (eski sondaj — tahmin üretmek
-    yanlış öneri yazmak olur) ya da iki taraf ayırt edilemeyecek kadar yakın
-    (< 0,3 puan ≈ 2 kat fark; gürültüden öneri türetilmez, karar insanda).
+    Burada tutulmasının sebebi geri düşüş: format tabanı için yeterli örneklem
+    birikmemişse (yeni pazar, yeni format kırılımı) kalibre kıyas
+    yapılamıyor ve bu ham kıyas hâlâ hiç bilgi vermemekten iyi.
+
+    `None` üç durumda: kırılım hiç ölçülmedi (eski sondaj), iki taraf ayırt
+    edilemeyecek kadar yakın (< 0,3 puan ≈ 2 kat fark), ya da taraflardan
+    birinde hiç gözlem yok — ölçülmemiş rafı "daha boş" ilan etmek
+    `bicim_skorla`'daki hatanın aynısı olurdu.
     """
     if olcum.alakali_shorts is None or olcum.alakali_uzun is None:
+        return None
+    if (
+        olcum.alakali_shorts < ASGARI_FORMAT_GOZLEM
+        or olcum.alakali_uzun < ASGARI_FORMAT_GOZLEM
+    ):
         return None
     shorts = ALAKALI_SAYI_AGIRLIGI * log10(1 + olcum.alakali_shorts)
     shorts += IZLENME_AGIRLIGI * log10(1 + (olcum.medyan_izlenme_shorts or 0))
@@ -691,6 +760,46 @@ class ArastirmaSonucu:
         return satir
 
 
+def kirilimsiz_adaylar(yol: Path, limit: int = 10) -> list[dict]:
+    """Ölçülmüş ama **format kırılımı olmayan** adaylar — yeniden sondaj kuyruğu.
+
+    DW-52 öncesi yapılan sondajlar `contentDetails` istemiyordu, yani o
+    adayların Shorts/uzun ayrımı yok ve `bicim_skorla` onlar için hiçbir zaman
+    skor üretemez. Kırılım geriye dönük hesaplanamaz: ayrım video sürelerinden
+    çıkıyor ve o sondajların video kimlikleri saklanmadı. Tek yol aynı sorguyu
+    yeniden sormak — aday başına yine `SONDAJ_MALIYETI`.
+
+    `sondajlanmamis_adaylar`'ın tersi bir kuyruk: orası "hiç ölçülmemiş"i
+    arıyor, burası "eksik ölçülmüş"ü. Hedef pazar filtresi **yok** — bu bir
+    keşif kuyruğu değil, geçmişi tamamlama işi; hangi dilde ölçüldüyse orada
+    tamamlanıyor.
+
+    Sıra en yeni ölçümden eskiye: iş birden fazla güne yayıldığında (sondaj
+    tavanı) önce hâlâ güncel olması muhtemel adaylar tamamlansın.
+    """
+    baglanti = depo.baglan(yol)
+    try:
+        return [
+            dict(s)
+            for s in baglanti.execute(
+                """
+                SELECT a.qid, a.dil, m.baslik
+                FROM arz a
+                JOIN makale m ON m.qid = a.qid AND m.dil = a.dil
+                WHERE a.an = (
+                    SELECT MAX(i.an) FROM arz i WHERE i.qid = a.qid AND i.dil = a.dil
+                )
+                  AND a.alakali_shorts IS NULL
+                ORDER BY a.an DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        ]
+    finally:
+        baglanti.close()
+
+
 def arastir(
     istemci,
     sayac: kota.KaliciSayac,
@@ -700,16 +809,25 @@ def arastir(
     tavan: int = SONDAJ_KOTA_TAVANI,
     an: datetime | None = None,
     oncelikli_qidler: set[str] | None = None,
+    adaylar: list[dict] | None = None,
 ) -> ArastirmaSonucu:
-    """Sondajlanmamış adayları sırayla sondalar ve ölçümleri yazar.
+    """Adayları sırayla sondalar ve ölçümleri yazar.
 
     Bir adayın hatası araştırmayı bitirmez — DW-28'de aynı kararı bölgeler
     için vermiştik ve ilk canlı koşumda işe yaradı.
+
+    `adaylar` verilmezse kuyruk `sondajlanmamis_adaylar`'dan gelir. Verilirse
+    o kuyruk sondalanır — `kirilimsiz_adaylar` ile geçmişi tamamlamak için.
+    Sondaj/yazma/kota mantığı tek yerde kalsın diye ikinci bir döngü
+    yazılmıyor: iki kuyruğun **seçimi** farklı, işlenmesi aynı.
     """
     sonuc = ArastirmaSonucu()
     rezerve = kota.video_basina_maliyet()
 
-    for aday in sondajlanmamis_adaylar(yol, limit, oncelikli_qidler=oncelikli_qidler):
+    if adaylar is None:
+        adaylar = sondajlanmamis_adaylar(yol, limit, oncelikli_qidler=oncelikli_qidler)
+
+    for aday in adaylar:
         if sayac.surec_harcamasi + SONDAJ_MALIYETI > tavan:
             sonuc.kota_bitti = True
             break
@@ -786,9 +904,43 @@ class Bosluk:
     # Ham skorun kendi dilinin tabanına göre kaç MAD üstünde olduğu. Dilin
     # örneklemi yetmiyorsa `None` — "kötü" değil, **bilinmiyor**.
     kalibre: float | None = None
+    # Format başına kalibre skorlar (DW-58). Her biri kendi formatının kendi
+    # dilindeki taban çizgisine göre; örneklem yetmiyorsa `None` ve karar
+    # birleşik skora düşüyor.
+    kalibre_shorts: float | None = None
+    kalibre_uzun: float | None = None
+
+    @property
+    def format_kalibreleri(self) -> dict[str, float]:
+        """Hesaplanabilmiş format kalibreleri — boşsa birleşik skora düşülür."""
+        return {
+            ad: deger
+            for ad, deger in (("shorts", self.kalibre_shorts), ("uzun", self.kalibre_uzun))
+            if deger is not None
+        }
+
+    @property
+    def gecen_formatlar(self) -> list[str]:
+        """Eşiği geçen formatlar, en iyiden kötüye.
+
+        Kapının asıl sorusu bu: "bu konu **herhangi bir formatta** fırsat mı?"
+        Uzun tarafı doymuş bir konu Shorts'ta bomboş olabilir ve birleşik skor
+        ikisini tek potada eritip fırsatı görünmez yapıyordu (DW-58).
+        """
+        gecenler = [ad for ad, deger in self.format_kalibreleri.items() if deger >= ESIK_KALIBRE]
+        return sorted(gecenler, key=lambda ad: -self.format_kalibreleri[ad])
 
     @property
     def onerilen_format(self) -> str | None:
+        """Hangi formatta yapılmalı.
+
+        Sıra: eşiği geçen format (birden çoksa en iyisi) → hiçbiri geçmediyse
+        ama kalibre varsa yine en iyisi → kalibre hiç yoksa ham arz kıyası.
+        """
+        if gecenler := self.gecen_formatlar:
+            return gecenler[0]
+        if kalibreler := self.format_kalibreleri:
+            return max(kalibreler, key=lambda ad: kalibreler[ad])
         return onerilen_format(self.olcum)
 
     def satir(self) -> str:
@@ -798,6 +950,9 @@ class Bosluk:
         etiket = f"[{self.sinif}] " if self.sinif else ""
         oneri = self.onerilen_format
         format_eki = f" · öneri: {oneri}" if oneri else ""
+        if kalibreler := self.format_kalibreleri:
+            ayrinti = " / ".join(f"{ad} {deger:+.2f}" for ad, deger in sorted(kalibreler.items()))
+            format_eki += f" [{ayrinti} MAD]"
         return (
             f"{kal:>6} MAD (ham {skor})  {etiket}{self.dil}: {baslik}\n"
             f"           talep {self.talep:,} okunma · arz: {self.olcum.ozet()}{format_eki}"
@@ -826,13 +981,31 @@ def red_gerekcesi(kayit: Bosluk) -> str | None:
 
     Sıra bilinçli: en temel eksiklik önce raporlanıyor, böylece "ölçümü bozuk"
     bir aday "talebi düşük" diye görünmüyor.
+
+    DW-58'den beri kalibre kapısı **format başına** çalışıyor: adayın
+    formatlarından en az biri eşiği geçiyorsa aday geçer. Öncesinde birleşik
+    skor kullanılıyordu ve uzun tarafı doymuş, Shorts tarafı bomboş bir konu
+    "orta arz" görünüp eleniyordu — yanlış atama değil, **kaçırma**.
+
+    Format kalibresi hiç hesaplanamadıysa (kırılım ölçülmemiş ya da format
+    tabanı için örneklem yetmemiş) birleşik skora düşülüyor: eski davranış
+    yanlış değil, yalnızca daha kaba.
     """
     if kayit.skor is None:
         return RED_OLCUM
-    if kayit.kalibre is None:
-        return RED_TABAN
-    if kayit.kalibre < ESIK_KALIBRE:
-        return RED_KALIBRE
+
+    kalibreler = kayit.format_kalibreleri
+    if kalibreler:
+        if not kayit.gecen_formatlar:
+            return RED_KALIBRE
+    else:
+        if kayit.kalibre is None:
+            return RED_TABAN
+        if kayit.kalibre < ESIK_KALIBRE:
+            return RED_KALIBRE
+
+    # Talep konu seviyesinde ve formattan bağımsız: Wikipedia okunması
+    # "kaçı 60 saniyelik ister" demiyor. Bu yüzden kapı formata bölünmüyor.
     if kayit.talep < ASGARI_TALEP:
         return RED_TALEP
     return None
@@ -917,11 +1090,38 @@ def bosluklar(yol: Path, *, limit: int | None = None) -> list[Bosluk]:
             orta, yayilim = taban
             b.kalibre = (b.skor - orta) / yayilim
 
-    # Kalibresi olmayanlar (geçersiz ölçüm ya da güvenilmez taban) sona:
-    # bilinmiyor, "kötü" değil. Ham skor ikincil anahtar olarak kalıyor ki
-    # kalibre edilemeyenler de kendi aralarında anlamlı sırada dursun.
-    cikti.sort(
-        key=lambda b: (b.kalibre is not None, b.kalibre or 0.0, b.skor is not None, b.skor or 0.0),
-        reverse=True,
-    )
+    # ⚠️ Format tabanı **ayrı** tutuluyor (DW-58) ve bu şart: Shorts sistematik
+    # olarak uzun videodan çok daha fazla izlenme alıyor, yani iki formatın
+    # skorları aynı potaya konursa Shorts tarafı topluca "kötü" görünür ve
+    # kapı neredeyse hep uzunu seçer. DW-51'de diller için ölçülen yanlılığın
+    # birebir aynısı; çözümü de aynı — her format kendi olağanıyla kıyaslanır.
+    #
+    # Örneklem dil × format olarak bölündüğü için `ASGARI_TABAN_ORNEK` daha
+    # geç doluyor. Dolmadığı sürece format kalibresi `None` kalıyor ve karar
+    # birleşik skora düşüyor: kaba ama doğru, uydurma değil.
+    for bicim in ("shorts", "uzun"):
+        bicim_skorlari: dict[str, list[float]] = {}
+        for b in cikti:
+            if (deger := bicim_skorla(b.olcum, b.talep, bicim)) is not None:
+                bicim_skorlari.setdefault(b.dil, []).append(deger)
+        bicim_tabanlari = {dil: _dil_tabani(ss) for dil, ss in bicim_skorlari.items()}
+        for b in cikti:
+            taban = bicim_tabanlari.get(b.dil)
+            deger = bicim_skorla(b.olcum, b.talep, bicim)
+            if deger is None or taban is None:
+                continue
+            orta, yayilim = taban
+            setattr(b, f"kalibre_{bicim}", (deger - orta) / yayilim)
+
+    # Sıralama en iyi format kalibresine göre; yoksa birleşik. Kalibresi
+    # olmayanlar (geçersiz ölçüm ya da güvenilmez taban) sona: bilinmiyor,
+    # "kötü" değil. Ham skor son anahtar olarak kalıyor ki kalibre
+    # edilemeyenler de kendi aralarında anlamlı sırada dursun.
+    def _sira(b: Bosluk) -> tuple:
+        en_iyi = max(b.format_kalibreleri.values(), default=None)
+        if en_iyi is None:
+            en_iyi = b.kalibre
+        return (en_iyi is not None, en_iyi or 0.0, b.skor is not None, b.skor or 0.0)
+
+    cikti.sort(key=_sira, reverse=True)
     return cikti[:limit] if limit else cikti

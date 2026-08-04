@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from yt_automation import cli
+from yt_automation.trend import bosluk
 
 KOK = Path(__file__).resolve().parent.parent
 BETIKLER = KOK / "scripts"
@@ -138,6 +139,42 @@ def test_bos_gun_hata_sayilmiyor():
     """
     metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
     assert 'grep -qi "aday yok"' in metin
+
+
+def test_kota_tavani_hata_sayilmiyor():
+    """Tavan dolduğunda çıktı "aday yok" değil — ayrı bir desen gerekiyor.
+
+    Bu ayrım gözden kaçmıştı: `test_bos_gun_hata_sayilmiyor` docstring'i tavan
+    hâlini kapsadığını söylüyordu ama aday kuyrukta dururken bütçe biterse
+    `bosluk arastir` "0 sondaj · 0 birim · KOTA TAVANINDA DURDU" basıyor ve
+    hiçbir desene uymadığı için adım **hata** sayılıyordu. Tavan tam olarak
+    durdurmak için var; dolduğu her gün bildirim göndermek yanlış alarm.
+    """
+    metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
+    assert 'grep -q "KOTA TAVANINDA DURDU"' in metin
+
+
+def test_kota_tavani_deseni_turkce_kucultmeye_guvenmiyor():
+    """Desen `-i` ile yazılmamalı — Türkçe'de "I" ile "ı" ayrı harfler.
+
+    İlk düzeltme `grep -qi "kota tavanında durdu"` idi ve üretimde **hiç
+    tutmayacaktı**: `grep -i` ASCII "I"yı dotless "ı" ile katlamaz, yani
+    "KOTA TAVANINDA DURDU" çıktısı desene uymaz ve yanlış alarm sürerdi.
+    Aynı tuzak Python'da da var (`"TAVANINDA".lower()` → "tavaninda").
+    """
+    metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
+    # Yorumda ifade geçebilir; yasak olan **komut** biçimi.
+    assert 'grep -qi "kota tavanında durdu"' not in metin
+    assert 'grep -qi "KOTA TAVANINDA DURDU"' not in metin
+
+
+def test_kota_tavani_metni_sozlesme():
+    """Betiğin aradığı metni `ArastirmaSonucu` üretmeye devam etmeli.
+
+    Sözleşmenin iki ucu: betik bu ifadeyi arıyor, CLI bu ifadeyi basıyor.
+    Biri yeniden yazılırsa tavanın dolduğu gece yanlış alarm geri gelir.
+    """
+    assert "KOTA TAVANINDA DURDU" in bosluk.ArastirmaSonucu(kota_bitti=True).ozet()
 
 
 @pytest.mark.parametrize(

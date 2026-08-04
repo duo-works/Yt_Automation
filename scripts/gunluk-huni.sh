@@ -81,6 +81,23 @@ adim() {
         return 0
     fi
 
+    # ⚠️ Kota tavanı da boş gün. Yukarıdaki yorum "sondaj tavanı dolduğunda"
+    # diyordu ama o hâlde çıktı "aday yok" DEĞİL: aday var, bütçe yok, metin
+    # "KOTA TAVANINDA DURDU" oluyor ve adım hata sayılıyordu. Tavan tam olarak
+    # durdurmak için var; dolması arıza değil bütçe hâli. Bu satır olmadan
+    # tavanın dolduğu her gün "huni düştü" bildirimi gider — DW-47'nin
+    # bitirdiği yanlış alarm düzenine geri dönüş. Desen `ArastirmaSonucu.ozet`
+    # metnine dayanıyor ve iki uçtan da testle kilitli.
+    #
+    # ⚠️ Burada `-i` YOK ve bu bilinçli: Türkçe'de ASCII "I" ile "ı" ayrı
+    # harfler, `grep -i` ikisini birbirine katlamaz. "kota tavanında durdu"
+    # deseni `-i` ile yazılsa "KOTA TAVANINDA DURDU" çıktısını **hiç
+    # tutmazdı** ve düzeltme sessizce çalışmamış olurdu. Testte yakalandı.
+    if printf '%s' "$cikti" | grep -q "KOTA TAVANINDA DURDU"; then
+        kaydet "huni · $ad — günlük kota tavanı doldu (bütçe hâli, hata değil)"
+        return 0
+    fi
+
     kaydet "HATA: huni · $ad başarısız (çıkış $kod)"
     basarisiz=1
 }

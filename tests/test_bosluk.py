@@ -6,6 +6,7 @@ Hiç canlı çağrı yok: `search.list` 100 birim ve CI'da tekrarlanamaz.
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from statistics import median
 
 import pytest
 
@@ -1014,6 +1015,110 @@ def test_format_farki_kucukse_oneri_yok():
     assert bosluk.onerilen_format(dengeli) is None
 
 
+def test_gozlemsiz_format_skorlanmaz():
+    """Sıfır gözlem boş raf değil, ölçülmemiş raf — skor üretilmemeli.
+
+    Gerçek vaka (2026-08-04, `Lise Lesèvre`): 50 sonuçtan 2'si alakalı, hiçbiri
+    Shorts değil. Eşiksiz hâlde arz terimleri sıfırdan kuruluyor, skor zirveye
+    çıkıyor ve konu **hiç Shorts görülmediği için** kapıyı geçiyordu.
+    """
+    cilizca = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=2,
+        alakali_shorts=0,
+        medyan_izlenme_shorts=None,
+        alakali_uzun=2,
+        medyan_izlenme_uzun=3_718,
+        medyan_yas_gun=3_552,
+    )
+    assert bosluk.bicim_skorla(cilizca, 13_959, "shorts") is None
+    # Gözlemi olan taraf skorlanmaya devam ediyor: eşik ölçümü değil,
+    # ölçümsüzlüğü eliyor.
+    assert bosluk.bicim_skorla(cilizca, 13_959, "uzun") is not None
+    # Kıyas da yapılamaz — ölçülmemiş rafı "daha boş" ilan etmek aynı hata.
+    assert bosluk.onerilen_format(cilizca) is None
+
+
+def test_kirilimsiz_adaylar_yalnizca_eksik_olculmusu_verir(yol: Path, aday):
+    """Yeniden sondaj kuyruğu: kırılımı olan aday listeye girmemeli."""
+    aday("Q1", "Eski_Olcum")
+    aday("Q2", "Yeni_Olcum")
+    _olcum_yaz(yol, "Q1", "en", izlenme=5_000)  # kırılımsız (DW-52 öncesi)
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid="Q2",
+            dil="en",
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=50,
+            alakali=30,
+            medyan_izlenme=5_000,
+            alakali_shorts=10,
+            medyan_izlenme_shorts=900,
+            alakali_uzun=20,
+            medyan_izlenme_uzun=8_000,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+        ),
+    )
+
+    kuyruk = bosluk.kirilimsiz_adaylar(yol, 10)
+    assert [k["qid"] for k in kuyruk] == ["Q1"]
+
+
+def test_yeniden_sondaj_adayi_kuyruktan_dusurur(yol: Path, aday):
+    """Kuyruk **en son** ölçüme bakıyor: tazelenen aday tekrar gelmemeli.
+
+    `arz` anahtarı (qid, dil, an) olduğu için yeniden sondaj eski satırı
+    silmiyor, yenisini ekliyor. Kuyruk eski satıra bakarsa aynı adayı her gün
+    yeniden sondalar — 102 birim, sonsuza kadar.
+    """
+    aday("Q1", "Eski_Olcum")
+    _olcum_yaz(yol, "Q1", "en", izlenme=5_000)
+    assert len(bosluk.kirilimsiz_adaylar(yol, 10)) == 1
+
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid="Q1",
+            dil="en",
+            sorgu="x",
+            an=(SIMDI + timedelta(days=1)).isoformat(),
+            donen=50,
+            alakali=30,
+            medyan_izlenme=5_000,
+            alakali_shorts=10,
+            medyan_izlenme_shorts=900,
+            alakali_uzun=20,
+            medyan_izlenme_uzun=8_000,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+        ),
+    )
+    assert bosluk.kirilimsiz_adaylar(yol, 10) == []
+
+
+def test_tek_gozlem_yeterli():
+    """Eşik ölçümsüzlüğü eliyor, cılız ölçümü değil — bir gözlem skorlanır."""
+    tek = bosluk.ArzOlcumu(
+        qid="Q",
+        dil="en",
+        sorgu="x",
+        an=SIMDI.isoformat(),
+        donen=50,
+        alakali=30,
+        alakali_shorts=1,
+        medyan_izlenme_shorts=400,
+        alakali_uzun=29,
+        medyan_izlenme_uzun=800_000,
+    )
+    assert bosluk.bicim_skorla(tek, 10_000, "shorts") is not None
+    assert bosluk.onerilen_format(tek) == "shorts"
+
+
 # --- Hedef pazarlar ve QID köprüsü (DW-53) ----------------------------------
 #
 # Karar (2026-08-03): kanallar EN+ES yayınlayacak; sondaj kotası yalnızca bu
@@ -1130,3 +1235,184 @@ def test_kopru_sondaji_rapora_kaynak_dil_talebiyle_girer(
     assert len(kayitlar) == 1, "köprü ölçümü raporda görünmeli (makale satırı yazıldı)"
     assert kayitlar[0].dil == "en"
     assert kayitlar[0].talep == 12_828, "talep kanıtı kaynak dilden (de) gelmeli"
+
+
+# --- Format başına kapı (DW-58) --------------------------------------------
+#
+# DW-52 arzı formata ayırdı ama kapı birleşik skoru kullanmaya devam ediyordu:
+# uzun tarafı doymuş, Shorts tarafı bomboş bir konu "orta arz" görünüp
+# eleniyordu. Yanlış atama değil, KAÇIRMA — konu öneri aşamasına bile
+# varamıyordu.
+
+
+def _kirilimli_yaz(
+    yol: Path,
+    qid: str,
+    dil: str,
+    *,
+    shorts_izlenme: int,
+    uzun_izlenme: int,
+    shorts_alakali: int = 20,
+    uzun_alakali: int = 20,
+):
+    bosluk.olcumu_yaz(
+        yol,
+        bosluk.ArzOlcumu(
+            qid=qid,
+            dil=dil,
+            sorgu="x",
+            an=SIMDI.isoformat(),
+            donen=50,
+            alakali=shorts_alakali + uzun_alakali,
+            medyan_izlenme=(shorts_izlenme + uzun_izlenme) // 2,
+            medyan_yas_gun=300,
+            medyan_abone=5_000,
+            harcanan=bosluk.SONDAJ_MALIYETI,
+            alakali_shorts=shorts_alakali,
+            medyan_izlenme_shorts=shorts_izlenme,
+            alakali_uzun=uzun_alakali,
+            medyan_izlenme_uzun=uzun_izlenme,
+        ),
+    )
+
+
+def _format_pazari(aday, yol: Path, dil: str = "en", adet: int = 6, okunma: int = 40_000):
+    """Format başına taban kuran sıradan adaylar — her iki rafta da orta yoğun."""
+    for i in range(adet):
+        aday(f"T{i}", f"{dil}_taban_{i}", dil=dil, okunma=okunma)
+        _kirilimli_yaz(
+            yol,
+            f"T{i}",
+            dil,
+            shorts_izlenme=200_000 * 2**i,
+            uzun_izlenme=100_000 * 2**i,
+        )
+
+
+def test_uzunda_doymus_shortsta_bos_konu_artik_geciyor(yol: Path, aday):
+    """DW-58'in asıl regresyonu.
+
+    Birleşik skorda bu konu "orta arz" görünüp eleniyordu; Shorts fırsatı
+    öneri aşamasına bile varamıyordu.
+    """
+    _format_pazari(aday, yol)
+    aday("FIRSAT", "Shortsta_Bos", dil="en", okunma=9_000)
+    _kirilimli_yaz(
+        yol,
+        "FIRSAT",
+        "en",
+        shorts_izlenme=400,  # raf bomboş
+        shorts_alakali=2,
+        uzun_izlenme=900_000,  # uzun taraf doymuş
+        uzun_alakali=45,
+    )
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "FIRSAT")
+    assert bosluk.red_gerekcesi(kayit) is None, "en az bir format eşiği geçiyorsa aday geçmeli"
+    assert kayit.gecen_formatlar == ["shorts"]
+    assert kayit.onerilen_format == "shorts"
+
+
+def test_her_iki_formatta_doymus_konu_hala_eleniyor(yol: Path, aday):
+    """Kapı gevşemedi: iki raf da doluysa aday yine düşüyor."""
+    _format_pazari(aday, yol)
+    aday("DOYMUS", "Her_Yerde_Dolu", dil="en", okunma=9_000)
+    _kirilimli_yaz(
+        yol,
+        "DOYMUS",
+        "en",
+        shorts_izlenme=3_000_000,
+        shorts_alakali=45,
+        uzun_izlenme=2_000_000,
+        uzun_alakali=45,
+    )
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "DOYMUS")
+    assert kayit.gecen_formatlar == []
+    assert bosluk.red_gerekcesi(kayit) == bosluk.RED_KALIBRE
+
+
+def test_talep_kapisi_formattan_bagimsiz_kaliyor(yol: Path, aday):
+    """Talep konu seviyesinde: Wikipedia "kaçı 60 saniyelik ister" demiyor.
+    Format kapısını geçmek talep eşiğini atlatmamalı."""
+    _format_pazari(aday, yol)
+    aday("CILIZ", "Talebi_Yok", dil="en", okunma=bosluk.ASGARI_TALEP - 1)
+    _kirilimli_yaz(yol, "CILIZ", "en", shorts_izlenme=300, shorts_alakali=1, uzun_izlenme=800_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "CILIZ")
+    assert kayit.gecen_formatlar, "format kapısını geçiyor"
+    assert bosluk.red_gerekcesi(kayit) == bosluk.RED_TALEP, "talep kapısı yine durdurmalı"
+
+
+def test_format_tabani_ayri_tutuluyor(yol: Path, aday):
+    """Shorts sistematik olarak daha çok izlenme alıyor; iki format aynı
+    potaya konsaydı Shorts tarafı topluca "kötü" görünür ve kapı neredeyse
+    hep uzunu seçerdi — DW-51'deki dil yanlılığının format karşılığı."""
+    _format_pazari(aday, yol)
+    kayitlar = [k for k in bosluk.bosluklar(yol) if k.kalibre_shorts is not None]
+    assert kayitlar, "taban kuruldu"
+
+    # Taban adaylarında Shorts izlenmesi uzunun iki katı; ayrı tabanlar
+    # kullanıldığı için ikisinin kalibre dağılımı benzer olmalı.
+    shorts = [k.kalibre_shorts for k in kayitlar]
+    uzun = [k.kalibre_uzun for k in kayitlar]
+    assert abs(median(shorts) - median(uzun)) < 0.5, (
+        "ayrı taban kullanılmazsa formatlar arası sistematik kayma kalır"
+    )
+
+
+def test_format_tabani_yetmezse_birlesik_skora_dusulur(yol: Path, aday):
+    """Örneklem dil × format olarak bölünüyor; ASGARI_TABAN_ORNEK dolmadan
+    format kalibresi üretmek uydurma olurdu.
+
+    ⚠️ Aday **kendi tabanına da sayılıyor** — DW-51'in birleşik davranışıyla
+    aynı. Bu yüzden kurulum eşikten iki eksik: taban adayları + adayın kendisi
+    eşiği doldurmasın.
+    """
+    _format_pazari(aday, yol, adet=bosluk.ASGARI_TABAN_ORNEK - 2)
+    aday("AZ", "Az_Ornek", dil="en", okunma=9_000)
+    _kirilimli_yaz(yol, "AZ", "en", shorts_izlenme=500, uzun_izlenme=900_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "AZ")
+    assert kayit.format_kalibreleri == {}, "yetersiz örneklemde format kalibresi olmamalı"
+    # Karar birleşik skora düşüyor — eski davranış, kaba ama doğru.
+    assert bosluk.red_gerekcesi(kayit) in (None, bosluk.RED_KALIBRE, bosluk.RED_TABAN)
+
+
+def test_kirilimsiz_eski_olcum_birlesik_kapiyi_kullanir(yol: Path, aday):
+    """DW-52 öncesi ölçümler format kalibresi üretmemeli; kapı eskisi gibi."""
+    _format_pazari(aday, yol)
+    aday("ESKI", "Eski_Kayit", dil="en", okunma=9_000)
+    _olcum_yaz(yol, "ESKI", "en", izlenme=5_000)
+
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "ESKI")
+    assert kayit.format_kalibreleri == {}
+    assert kayit.kalibre is not None, "birleşik kalibre yine hesaplanmalı"
+
+
+def test_siralama_en_iyi_formata_gore(yol: Path, aday):
+    """Kapı format başına çalışıyorsa sıralama da öyle olmalı: tek formatta
+    parlayan aday, iki formatta vasat olanın üstünde durmalı."""
+    _format_pazari(aday, yol)
+    aday("PARLAK", "Tek_Formatta_Parlak", dil="en", okunma=9_000)
+    _kirilimli_yaz(yol, "PARLAK", "en", shorts_izlenme=300, shorts_alakali=1, uzun_izlenme=900_000)
+
+    kayitlar = bosluk.bosluklar(yol)
+    assert kayitlar[0].qid == "PARLAK"
+
+
+def test_notion_hedef_kanali_yalnizca_gecen_formattan_yazar(yol: Path, aday, monkeypatch):
+    """Eşiği geçmemiş bir formatı kanala yazmak kararı uydurmak olurdu."""
+    from yt_automation.trend import notion
+
+    _format_pazari(aday, yol)
+    aday("FIRSAT", "Shortsta_Bos", dil="en", okunma=9_000)
+    _kirilimli_yaz(yol, "FIRSAT", "en", shorts_izlenme=400, shorts_alakali=2, uzun_izlenme=900_000)
+
+    kayitlar = {k.qid: k for k in bosluk.bosluklar(yol)}
+    gecen = notion.bosluk_ozellikleri(kayitlar["FIRSAT"], gun="2026-08-03", kaynak_sayisi=5)
+    assert gecen["Hedef kanal"]["select"] == {"name": "Shorts kanal"}
+    assert gecen["Önerilen format"]["select"]["name"] == "Shorts"
+
+    elenen = notion.bosluk_ozellikleri(kayitlar["T0"], gun="2026-08-03", kaynak_sayisi=5)
+    assert elenen["Hedef kanal"]["select"] is None, "kapıyı geçmeyen adaya kanal atanmamalı"
