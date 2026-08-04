@@ -156,42 +156,46 @@ Protokolün tekrarlayan adımları komut haline getirildi. Gövdeleri `docs/ajan
 | `/soguk-baslangic` | Projeyi sıfırdan öğren, **kaynaklı** özet üret — yeni ajan devreye girerken |
 | `/denetle` | Bir soğuk başlangıç özetini kaynaklara karşı denetle (farklı oturumda) |
 
-**Codex kullanıyorsan** — repo bazında slash komut desteği yok, aynı dosyalar kişisel prompt dizinine kopyalanır:
+**Codex kullanıyorsan** — repo bazında slash komut desteği yok, aynı dosyalar kişisel prompt dizinine kopyalanır. Kurulum betiği bunu yapıyor:
 
 ```bash
-mkdir -p ~/.codex/prompts
-cp docs/ajan/komutlar/*.md ~/.codex/prompts/
+python3 scripts/ajan-kurulum.py --kur
 ```
 
-PowerShell'de (`mkdir -p` orada yok):
+Elle yapmak isterseniz `cp docs/ajan/komutlar/*.md ~/.codex/prompts/` (PowerShell: `Copy-Item`) aynı işi görür — ama betik ayrıca kopyanın **bayat olup olmadığını** karşılaştırır, elle kopyalama karşılaştırmaz.
 
-```powershell
-New-Item -ItemType Directory -Force ~/.codex/prompts
-Copy-Item docs/ajan/komutlar/*.md ~/.codex/prompts/
-```
+Dosya adı komut adı olur (`oturum-basla.md` → `/oturum-basla`). Gövdeler bu yüzden araç-bağımsız dille yazılmıştır; MCP araç adı geçmez — Notion'a erişim gerektiren tek adımın (`/oturum-basla` → aktif kayıt sorgusu) MCP istemeyen bir yedeği var: `scripts/oturum-sorgula.py`. Codex tarafında Notion MCP kurmak **gerekmiyor**.
 
-Dosya adı komut adı olur (`oturum-basla.md` → `/oturum-basla`). Gövdeler bu yüzden araç-bağımsız dille yazılmıştır; MCP araç adı geçmez.
-
-⚠️ Kanonik dosyalar değiştiğinde kopyayı tazelemek gerekir. Komut davranışı beklenmedik geliyorsa önce kopyanın güncel olduğunu kontrol et.
+⚠️ Kanonik dosyalar değiştiğinde kopya bayatlar ve Codex eskisini çalıştırır — bunu size söylemez. Komut davranışı beklenmedik geliyorsa önce `python3 scripts/ajan-kurulum.py` çalıştırın.
 
 ### İlk kurulum — komutlar çalışmadan önce
 
-Dört adım. **Üçü sessizce bozulur**: komut hata vermez, yanlış iş yapar. Bu yüzden her adımın bir doğrulaması var; doğrulamayı atlarsanız kurulumun eksik olduğunu ilk çakışmada öğrenirsiniz.
+```bash
+python3 scripts/ajan-kurulum.py --kur     # kur + doğrula
+python3 scripts/ajan-kurulum.py           # yalnızca doğrula
+```
 
-| # | Adım | Doğrulama |
-|---|---|---|
-| 1 | **Notion MCP bağlantısı** — komutların hepsi Oturum Kaydı'nı sorgular | `/oturum-basla` 2. adımda sorguyu döndürebiliyor mu |
-| 2 | **Git kimliği** — `Kişi` alanı buradan okunur | `git config user.name` → tam olarak `Mirza Sarıbıyık` veya `Ömer Faruk Güleç` |
-| 3 | **Hook onayı** (yalnız Claude Code) — proje `settings.json`'ı ilk açılışta onay ister | Yeni oturumda protokol hatırlatması geliyor mu; gelmiyorsa `/hooks` menüsünü bir kez aç |
-| 4 | **Codex kopyası** (yalnız Codex) — yukarıdaki `cp` / `Copy-Item` | `/oturum-basla` komut olarak tanınıyor mu |
+Saf Python; Windows'ta da aynı komut (Git Bash gerekmez). Beş şeyi kontrol eder ve **çıkış kodu 0 değilse komutlar güvenilir çalışmaz**:
 
-**Neden doğrulama şart:**
+| Kontrol | Otomatik kurulur mu |
+|---|---|
+| Git kimliği tabloda mı (`Kişi` alanının tek kaynağı) | hayır — kendiniz ayarlar |
+| Claude Code sarmalayıcıları yerinde mi | hayır — repo'dan gelir |
+| Codex kopyası var ve **güncel** mi | ✅ `--kur` |
+| Hook'lar tanımlı mı (`SessionStart` + `Stop`) | hayır — repo'dan gelir |
+| Notion erişimi gerçekten çalışıyor mu | hayır — `.env`'e token koyarsınız |
 
-- **MCP yoksa** sorgu düşer. Protokolün tüm güvencesi o sorgudur; `oturum-basla.md` bu yüzden *"hatayı 'aktif kayıt yok' diye yorumlama"* diyor. Hata bastırılırsa komut "çakışma yok" der ve çalışmaya izin verir — güvence tersine döner.
-- **Git kimliği yanlışsa** kayıt yanlış kişiye açılır ve bu **fark edilmez**. Ortak Notion hesabı kimin çalıştığını bilmiyor; tek kaynak git'tir. `user.name` boşsa komut sorar, ama yanlışsa sormaz.
-- **Hook onaylanmazsa** `SessionStart` hatırlatması ve `Stop` uyarısı hiç çalışmaz. Claude Code sessiz başarısızlığı bildirmez — komutlar yine elle çalışır, ama protokolü hatırlatan katman kaybolur.
+**Neden betik, neden doğrulama.** Bu liste önce düz metin olarak yazıldı; sonra ölçüldü ve `~/.codex/prompts/` **hiç yoktu** — yani Codex tarafında komutların hiçbiri kurulu değildi ve kimse fark etmemişti. Elle yapılan kurulum atlanıyor, atlandığı da görünmüyor.
 
-> Ortak Notion hesabı ve her iki kişinin iki ajan kullanması, bu kurulumun ekipteki **her makinede ayrı ayrı** yapılmasını gerektiriyor. Bir makinede eksik kurulum, diğer makinedeki doğru kurulumu da işe yaramaz hale getirir: çakışma kontrolü ancak herkes kaydını açıyorsa anlamlıdır.
+Görünmemesinin sebebi: **üç önkoşul sessizce bozulur.**
+
+- **Notion erişimi yoksa** sorgu düşer. Protokolün tüm güvencesi o sorgudur; `oturum-basla.md` bu yüzden *"hatayı 'aktif kayıt yok' diye yorumlama"* diyor. Hata bastırılırsa komut "çakışma yok" der ve çalışmaya izin verir — güvence tersine döner. Betik bunu ayırt eder: sorgunun çalıştığını değil, **kanaryanın göründüğünü** kontrol eder.
+- **Git kimliği yanlışsa** kayıt yanlış kişiye açılır ve fark edilmez. `user.name` boşsa komut sorar; **yanlışsa sormaz.**
+- **Codex kopyası bayatsa** eski komut çalışır ve bunu söylemez. Betik kopyayı kanonik dosyayla bayt bayt karşılaştırır.
+
+Bir de betiğin **doğrulayamadığı** tek şey var, çünkü dışarıdan görünmüyor: Claude Code proje hook'ları için bir kez onay ister. Yeni oturumda protokol hatırlatması gelmiyorsa `/hooks` menüsünü bir kez açın.
+
+> Kurulum ekipteki **her makinede ayrı ayrı** yapılır. Bir makinede eksik kurulum diğerindeki doğru kurulumu da işe yaramaz hale getirir: çakışma kontrolü ancak herkes kaydını açıyorsa anlamlıdır.
 
 ---
 
