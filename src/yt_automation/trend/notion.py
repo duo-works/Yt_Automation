@@ -264,12 +264,41 @@ def govde_metni(sinyal: hiz.Sinyal) -> list[dict]:
 def aktarilmamis_bosluklar(
     yol: Path, *, adet: int = VARSAYILAN_ADET, zorla: bool = False
 ) -> list[bosluk.Bosluk]:
-    """Arzı ölçülmüş, boşluk skoruna göre sıralı, henüz aktarılmamış adaylar."""
+    """Kapıları geçmiş, kalibre skora göre sıralı, henüz aktarılmamış adaylar.
+
+    ⚠️ `zorla` **kapıları da** açıyor, yalnızca "daha önce gönderildi" filtresini
+    değil. Sebebi: iki farklı "hepsini göster" anlamı taşımak kafa karıştırır ve
+    kapının elediğini elle görmek isteyen birinin başka bir bayrağı yok.
+    """
     kayitlar = bosluk.bosluklar(yol)
     if not zorla:
+        kayitlar = [k for k in kayitlar if bosluk.red_gerekcesi(k) is None]
         gonderilmis = _aktarilanlar(yol)
         kayitlar = [k for k in kayitlar if _bosluk_anahtari(k) not in gonderilmis]
     return kayitlar[:adet]
+
+
+def bosluk_kapi_ozeti(yol: Path) -> tuple[int, dict[str, int]]:
+    """`(kapıyı geçen sayısı, gerekçe başına elenen sayısı)`.
+
+    İkisi birlikte dönüyor çünkü **ayrı ayrı yanıltıcılar**: "aktarılacak aday
+    yok" iki bambaşka duruma karşılık gelebiliyor — kapı hepsini eledi, ya da
+    kapıyı geçenlerin hepsi zaten gönderilmiş. İlkinde huni bilerek boş geçmiş,
+    ikincisinde yeni ölçüm gerekiyor. Yalnızca eleme sayısına bakan bir rapor
+    ikincisini birincisi gibi gösterir.
+
+    Rapor için: kaç adayın **neden** düştüğünü basmayan bir kapı, sessizce
+    çalışan bir kapıdır ve eşikleri kimse revize edemez.
+    """
+    gecen = 0
+    sayim: dict[str, int] = {}
+    for kayit in bosluk.bosluklar(yol):
+        gerekce = bosluk.red_gerekcesi(kayit)
+        if gerekce:
+            sayim[gerekce] = sayim.get(gerekce, 0) + 1
+        else:
+            gecen += 1
+    return gecen, sayim
 
 
 def _bosluk_anahtari(kayit: bosluk.Bosluk) -> str:
@@ -326,14 +355,18 @@ def bosluk_govdesi(kayit: bosluk.Bosluk, dosya: dict | None) -> list[dict]:
     """
     baslik = kayit.baslik.replace("_", " ")
     skor = "hesaplanamadı" if kayit.skor is None else f"{kayit.skor:+.2f}"
+    kalibre = "hesaplanamadı" if kayit.kalibre is None else f"{kayit.kalibre:+.2f} MAD"
     satirlar = [
         f"{kayit.dil}.wikipedia · [{kayit.sinif}]",
         f"TALEP — {kayit.talep:,} günlük okunma",
         f"ARZ — {kayit.olcum.ozet()}",
-        f"BOŞLUK SKORU — {skor}",
-        "⚠️ Skor bir SIRALAMADIR, eşik değildir: Wikipedia okunması ile YouTube "
-        "izlenmesi farklı ölçeklerde olduğu için işaret kalibre edilmedi. Adayları "
-        "birbirine göre karşılaştırın, sıfırı sınır saymayın.",
+        f"BOŞLUK SKORU — {kalibre} (ham {skor})",
+        f"Bu aday {kayit.dil} pazarının olağanından {kalibre} daha iyi. Ham skorun "
+        "mutlak seviyesi fırsatı değil PAZAR BÜYÜKLÜĞÜNÜ kodluyor, o yüzden diller "
+        "arası karşılaştırma kalibre değer üzerinden yapılır.",
+        f"⚠️ Eşikler ({bosluk.ESIK_KALIBRE:.1f} MAD ve {bosluk.ASGARI_TALEP:,} okunma/gün) "
+        "gözlenen dağılımdan seçildi, YAYIN SONUÇLARINDAN DEĞİL — henüz tek video "
+        "yayınlanmadı. İlk sonuçlar gelince revize edilmeli.",
     ]
 
     if dosya_dolu(dosya):

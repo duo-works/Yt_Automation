@@ -101,6 +101,55 @@ ALAKALI_SAYI_AGIRLIGI = 0.5
 ABONE_AGIRLIGI = 0.5
 YAS_AGIRLIGI = 0.5  # eski içerik = zayıf arz, bu yüzden **çıkarılıyor**
 
+# --- Kapılar (DW-51) -----------------------------------------------------
+#
+# Huni bunlardan önce **hiçbir günü boş geçiremiyordu**: skora göre sıralayıp
+# ilk N'i koşulsuz gönderiyordu. PRD'nin pazarlık dışı saydığı dördüncü karşı
+# önlem bunu doğrudan yasaklıyor — "üretilen her çıktıyı koşulsuz yayınlayan
+# sistem slop üretir".
+#
+# ⚠️ Aşağıdaki iki eşik **sonuçla kalibre edilmedi ve bugün edilemez**: henüz
+# tek video yayınlanmadı, yani "bu aday tuttu mu" diye sorulabilecek bir gerçek
+# yok. Değerler 2026-08-03'te ölçülmüş 73 sondajın **dağılımından** seçildi.
+# Yukarıdaki ağırlıklar gibi bunlar da değişmesi beklenen yerler.
+
+# Bir dilin tabanı için gereken asgari ölçüm. `nis._taban`'ın gerekçesiyle
+# aynı: yetersiz örneklemden çıkan taban güvenilmez, yanlış taban yanlış zirve
+# demek. Altında kalan dil sıralanmıyor — ama sessizce değil, CLI sayıyı basar.
+ASGARI_TABAN_ORNEK = 5
+
+# Göreli kapı: aday kendi dilinin olağanından kaç MAD daha iyi olmalı.
+#
+# Neden dile göre: skorun mutlak seviyesi fırsatı değil **pazar büyüklüğünü**
+# kodluyor. 2026-08-03 ölçümünde İngilizce arz medyanı 1.296.193 izlenme iken
+# Almanca 58.040, Hintçe talep medyanı 292 iken Almanca 4.775. Küresel tek bir
+# kesme bu yüzden dil seçiyor, aday değil: 0,0 eşiğinde geçen 3 adayın 3'ü de
+# Almanca'ydı. `skorla()`'nın docstring'i "talep tarafına bir ölçek katsayısı
+# gerekiyor" diyor; dil bazında ortalamak o katsayıyı pazar başına ampirik
+# kestirmektir.
+ESIK_KALIBRE = 2.0
+
+# Mutlak kapı: zirve günlük Wikipedia okunması.
+#
+# Göreli kapı tek başına yetmiyor ve sebebi yapısal: her dilin en iyisi tanım
+# gereği kendi medyanının üstünde, yani salt göreli bir kapı **hiçbir günü boş
+# geçiremez** — çözmesi istenen sorunun ta kendisi. Ölçümde z ≥ 2,0'ı geçen üç
+# aday mutlak olarak kötüydü: günde 328, 419 ve 596 okunma, üçü de 50/50
+# alakalı (YouTube'un döndürdüğü her sonuç konu üzerinde, yani boşluk yok).
+# Yalnızca kendi dillerinin tabanı daha kötü olduğu için geçiyorlardı.
+#
+# Eşik skor değil **yorumlanabilir birim**: günde 1.000 kişinin okumadığı bir
+# konu için video yapılmaz, dilinin tabanı ne olursa olsun. Gözlenen medyanın
+# (1.211) hemen altında.
+ASGARI_TALEP = 1_000
+
+# Red gerekçeleri — CLI bunları sayıp basıyor. Sessiz eleme, sessiz
+# başarısızlığın kardeşi: DW-47 aynı dersi zamanlama tarafında verdi.
+RED_OLCUM = "ölçüm geçersiz"
+RED_TABAN = f"dil tabanı güvenilmez (< {ASGARI_TABAN_ORNEK} ölçüm)"
+RED_KALIBRE = f"dilinin olağanına göre yeterince iyi değil (< {ESIK_KALIBRE:.1f} MAD)"
+RED_TALEP = f"talep eşiğin altında (< {ASGARI_TALEP:,} okunma/gün)"
+
 # Sondaj sorgusundan atılacak Wikipedia ayrım eki: "Cleopatra_(1963_film)".
 # Kimse böyle aramıyor; parantez içi Wikipedia'nın kendi konvansiyonu.
 _AYRIM_EKI = re.compile(r"\s*\([^)]*\)\s*$")
@@ -533,15 +582,53 @@ class Bosluk:
     talep: int
     olcum: ArzOlcumu
     skor: float | None
+    # Ham skorun kendi dilinin tabanına göre kaç MAD üstünde olduğu. Dilin
+    # örneklemi yetmiyorsa `None` — "kötü" değil, **bilinmiyor**.
+    kalibre: float | None = None
 
     def satir(self) -> str:
         baslik = self.baslik.replace("_", " ")
         skor = "—" if self.skor is None else f"{self.skor:+.2f}"
+        kal = "—" if self.kalibre is None else f"{self.kalibre:+.2f}"
         etiket = f"[{self.sinif}] " if self.sinif else ""
         return (
-            f"{skor:>7}  {etiket}{self.dil}: {baslik}\n"
+            f"{kal:>6} MAD (ham {skor})  {etiket}{self.dil}: {baslik}\n"
             f"           talep {self.talep:,} okunma · arz: {self.olcum.ozet()}"
         )
+
+
+def _dil_tabani(skorlar: list[float]) -> tuple[float, float] | None:
+    """Bir dilin taban çizgisi: skorlarının medyanı ve medyan mutlak sapması.
+
+    Medyan + MAD, ortalama + standart sapma değil — `nis._taban`'ın gerekçesi
+    burada da geçerli: tek bir uç değer ortalamayı sürükler, aradığımız şey ise
+    tam olarak "bu dilde olağandışı olan", yani taban olağanı temsil etmeli.
+
+    MAD sıfırsa `None`: bütün skorlar aynı demek, bölme tanımsız ve o dilde
+    "olağandışı" diye bir şey yok.
+    """
+    if len(skorlar) < ASGARI_TABAN_ORNEK:
+        return None
+    orta = median(skorlar)
+    yayilim = median([abs(s - orta) for s in skorlar])
+    return (orta, yayilim) if yayilim > 0 else None
+
+
+def red_gerekcesi(kayit: Bosluk) -> str | None:
+    """Adayın hangi kapıdan elendiği; `None` ise geçti.
+
+    Sıra bilinçli: en temel eksiklik önce raporlanıyor, böylece "ölçümü bozuk"
+    bir aday "talebi düşük" diye görünmüyor.
+    """
+    if kayit.skor is None:
+        return RED_OLCUM
+    if kayit.kalibre is None:
+        return RED_TABAN
+    if kayit.kalibre < ESIK_KALIBRE:
+        return RED_KALIBRE
+    if kayit.talep < ASGARI_TALEP:
+        return RED_TALEP
+    return None
 
 
 def bosluklar(yol: Path, *, limit: int | None = None) -> list[Bosluk]:
@@ -594,6 +681,27 @@ def bosluklar(yol: Path, *, limit: int | None = None) -> list[Bosluk]:
             )
         )
 
-    # Skoru olmayanlar (geçersiz ölçüm) sona: bilinmiyor, "kötü" değil.
-    cikti.sort(key=lambda b: (b.skor is not None, b.skor or 0.0), reverse=True)
+    # Kalibrasyon ikinci geçişte: taban, o dilin **bütün** ölçümlerinden
+    # çıkıyor, yani tek bir adaya bakarak hesaplanamaz. `limit` bilerek en
+    # sonda uygulanıyor — tabanı kırpılmış bir örneklemden kurmak, kırpmanın
+    # kendisini sinyal sanmak olurdu.
+    dile_gore: dict[str, list[float]] = {}
+    for b in cikti:
+        if b.skor is not None:
+            dile_gore.setdefault(b.dil, []).append(b.skor)
+    tabanlar = {dil: _dil_tabani(ss) for dil, ss in dile_gore.items()}
+
+    for b in cikti:
+        taban = tabanlar.get(b.dil)
+        if b.skor is not None and taban is not None:
+            orta, yayilim = taban
+            b.kalibre = (b.skor - orta) / yayilim
+
+    # Kalibresi olmayanlar (geçersiz ölçüm ya da güvenilmez taban) sona:
+    # bilinmiyor, "kötü" değil. Ham skor ikincil anahtar olarak kalıyor ki
+    # kalibre edilemeyenler de kendi aralarında anlamlı sırada dursun.
+    cikti.sort(
+        key=lambda b: (b.kalibre is not None, b.kalibre or 0.0, b.skor is not None, b.skor or 0.0),
+        reverse=True,
+    )
     return cikti[:limit] if limit else cikti

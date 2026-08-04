@@ -224,13 +224,24 @@ def _bosluk_rapor(*, limit: int) -> int:
     if not kayitlar:
         print("Ölçüm yok — önce `ytoto bosluk arastir` çalıştırın.")
         return 1
-    print(f"{len(kayitlar)} ölçülmüş aday · skor = log(talep) − arz gücü\n")
-    for kayit in kayitlar:
-        print(f"  {kayit.satir()}")
+    gecen = sum(1 for k in kayitlar if bosluk.red_gerekcesi(k) is None)
     print(
-        "\nℹ️ Skor bir sıralamadır, eşik değildir: Wikipedia okunması ile YouTube "
-        "izlenmesi farklı ölçeklerde olduğu için işaret henüz kalibre edilmedi. "
-        "Adayları birbirine göre karşılaştırın, sıfırı sınır saymayın.",
+        f"{len(kayitlar)} ölçülmüş aday · {gecen} tanesi kapıları geçiyor\n"
+        f"skor = log(talep) − arz gücü · MAD = skorun kendi dilinin tabanına uzaklığı\n"
+    )
+    for kayit in kayitlar:
+        gerekce = bosluk.red_gerekcesi(kayit)
+        isaret = "  " if gerekce is None else "· "
+        satir = kayit.satir()
+        if gerekce:
+            satir += f"\n           ↳ elendi: {gerekce}"
+        print(f"{isaret}{satir}")
+    print(
+        f"\nℹ️ Kapılar: kalibre skor ≥ {bosluk.ESIK_KALIBRE:.1f} MAD **ve** talep ≥ "
+        f"{bosluk.ASGARI_TALEP:,} okunma/gün. Ham skorun mutlak seviyesi fırsatı değil "
+        "pazar büyüklüğünü kodluyor, o yüzden sıralama dile göre normalize ediliyor. "
+        "Eşikler gözlenen dağılımdan seçildi, yayın sonuçlarından değil — tek video "
+        "yayınlanınca revize edilmeli.",
         file=sys.stderr,
     )
     return 0
@@ -366,7 +377,26 @@ def _trend_aktar(*, adet: int, kuru: bool, zorla: bool, kaynak_turu: str) -> int
         else notion.aktarilmamis_adaylar(yol, adet=adet, zorla=zorla)
     )
 
+    # Kapıların ne elediği hem dolu hem boş günde raporlanıyor: eşikleri revize
+    # edecek olan tek şey bu sayı ve sessiz eleme onu görünmez yapardı.
+    gecen_sayisi, eleme = notion.bosluk_kapi_ozeti(yol) if wiki and not zorla else (0, {})
+
     if not adaylar:
+        # ⚠️ "Aday yok"un iki ayrı sebebi var ve karıştırmak operatörü yanlış
+        # yere bakmaya gönderir: kapı hepsini elediyse huni bilerek boş geçmiş
+        # ve yapılacak bir şey yok; kapıyı geçenler zaten gönderilmişse yeni
+        # ölçüm gerekiyor. Ayrım `gecen_sayisi` ile yapılıyor.
+        if wiki and eleme and gecen_sayisi == 0:
+            # ⚠️ "aday yok" ifadesi sözleşme: `gunluk-huni.sh` bu metni görünce
+            # koşumu boş gün sayıyor, hata değil (DW-47). Metni değiştirirken
+            # betikteki `grep` ile birlikte değiştirin.
+            print(
+                "Aktarılacak aday yok — ölçülen adayların hiçbiri kapıları geçmedi.\n"
+                "Bu bir hata değil: eşiği geçen konu çıkmadığı gün huni bilerek boş geçer."
+            )
+            for gerekce, sayi in sorted(eleme.items(), key=lambda t: -t[1]):
+                print(f"  {sayi:>3} aday · {gerekce}")
+            return 0
         if wiki:
             print(
                 "Aktarılacak aday yok. Sırayla: `ytoto konu topla` (aday üret), "
@@ -379,6 +409,11 @@ def _trend_aktar(*, adet: int, kuru: bool, zorla: bool, kaynak_turu: str) -> int
                 "`ytoto trend siniflandir`. Hepsi aktarılmışsa `--zorla` kullanın."
             )
         return 1
+
+    if eleme:
+        toplam = sum(eleme.values())
+        ayrinti = " · ".join(f"{sayi} {gerekce}" for gerekce, sayi in sorted(eleme.items()))
+        print(f"Kapılar {toplam} adayı eledi — {ayrinti}")
 
     if kuru:
         print(f"KURU KOŞUM — Notion aktarımı · kaynak: {kaynak_turu} · {len(adaylar)} aday")
