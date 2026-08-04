@@ -426,10 +426,7 @@ def onerilen_format(olcum: ArzOlcumu) -> str | None:
     """
     if olcum.alakali_shorts is None or olcum.alakali_uzun is None:
         return None
-    if (
-        olcum.alakali_shorts < ASGARI_FORMAT_GOZLEM
-        or olcum.alakali_uzun < ASGARI_FORMAT_GOZLEM
-    ):
+    if olcum.alakali_shorts < ASGARI_FORMAT_GOZLEM or olcum.alakali_uzun < ASGARI_FORMAT_GOZLEM:
         return None
     shorts = ALAKALI_SAYI_AGIRLIGI * log10(1 + olcum.alakali_shorts)
     shorts += IZLENME_AGIRLIGI * log10(1 + (olcum.medyan_izlenme_shorts or 0))

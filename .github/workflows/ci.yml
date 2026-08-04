@@ -139,6 +139,11 @@ jobs:
         run: |
           pip install ruff
           ruff check .
+          # ⚠️ `ruff check` biçimlendirmeye BAKMIYOR — ayrı bir komut gerekiyor.
+          # Bu eksik ölçüldü: 25 PR'lık zincir main'e indiğinde iki dosyada
+          # biçim kayması vardı ve hepsi CI'dan yeşil geçmişti (DW-73).
+          # "CI yeşil" ile "kod temiz" arasındaki farkın bu repodaki üçüncü örneği.
+          ruff format --check .
 
       - name: Test (pytest)
         run: |
