@@ -143,3 +143,40 @@ Kabul edilen yeni kısıt: örneklem artık **dil × format** olarak bölünüyo
 
 Talep kapısı (`ASGARI_TALEP`) **formata bölünmedi** ve bölünemez: Wikipedia
 okunması konu seviyesinde, "kaçı 60 saniyelik ister" bilgisini taşımıyor.
+
+### İlk canlı ölçüm — 2026-08-04, 114 sondajlanmış aday
+
+Otomasyon DW-58 ucuna taşındıktan (ADR-0008, `tazele`) sonraki ilk koşum. 20
+yeni sondajın hepsi kırılımlı geldi ve en+es'in format tabanı tek koşumda doldu
+(en 13, es 8 aday — `ASGARI_TABAN_ORNEK`'in iki katı).
+
+| Kapı | Geçen |
+|---|---|
+| birleşik (DW-58 öncesi) | 4 / 114 |
+| **format başına (DW-58 sonrası)** | **5 / 114** |
+| yalnız format kapısıyla geçen | **1** |
+| yalnız birleşik kapıyla geçen | 0 |
+
+Asıl bulgu sayının kendisi değil, **yönü**. Format kalibresi üretilebilen üç
+adayın üçünde de öneri Shorts ve uzun kalibresi eşiğin altında:
+
+| Aday | birleşik | shorts | uzun |
+|---|---|---|---|
+| Lise Lesèvre (en) | 1,09 | **3,30** | 1,00 |
+| Fritz Gerlich (es) | 2,22 | **3,06** | 1,95 |
+| Ernst Hanfstaengl (es) | 2,09 | **2,58** | 1,47 |
+
+Üçünün de uzun rafı doymuş, Shorts rafı boş. Birleşik kapı bu ikisini tek
+potada eritince Lise Lesèvre eşiğin altında kalıp **eleniyordu** — yukarıdaki
+gerekçenin ta kendisi, artık varsayım değil ölçüm. Diğer ikisi geçiyordu ama
+hangi formatla girileceği bilgisi yoktu.
+
+Kabul edilen kısıt netleşti: DW-53 sondajı en+es'e daralttığı için hedef dışı
+dillerdeki eski adaylar (bugün 2 `tr` aday) format kalibresi **hiç**
+üretemeyecek ve birleşik skora düşmeye devam edecek. Onlar için format önerisi
+boş kalıyor — yanlış öneri üretmektense boş bırakmak doğru, ama Notion'da
+"önerisiz aday" diye bir sınıf oluşuyor.
+
+Örneklem küçük (21 kalibre edilebilir aday, tek koşum) ve bu bir **geri çağırma**
+ölçümü, değer ölçümü değil: Lise Lesèvre'nin iyi bir video olup olmadığını
+bilmiyoruz, yalnızca huninin onu insan bakmadan atmayı bıraktığını biliyoruz.
