@@ -60,4 +60,9 @@ veri/
 # --- Genel ---
 *.log
 tmp/
+# ⚠️ `tmp/` yalnızca **dizin** eşleştiriyor. `nis_tmp` adlı 2 baytlık bir çöp
+# dosya bu yüzden yakalanmadı, commit edildi ve zincirde altı dal taşındı
+# (DW-67). Aşağıdaki iki desen dosya biçimini de kapatıyor.
+*_tmp
+*.tmp
 .cache/
