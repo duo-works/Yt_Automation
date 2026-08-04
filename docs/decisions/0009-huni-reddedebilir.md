@@ -201,3 +201,32 @@ boş kalıyor — yanlış öneri üretmektense boş bırakmak doğru, ama Notio
 Örneklem küçük (21 kalibre edilebilir aday, tek koşum) ve bu bir **geri çağırma**
 ölçümü, değer ölçümü değil: Fritz Gerlich'in iyi bir video olup olmadığını
 bilmiyoruz, yalnızca huninin onu insan bakmadan atmayı bıraktığını biliyoruz.
+
+#### Aynı gün, 81 kalibre edilebilir aday — yukarıdaki sayılar oynadı
+
+Eski ölçümler yeniden sondalanıp (`bosluk tazele`) örneklem 21'den 81'e
+çıkınca tablo değişti:
+
+| | 21 aday | 81 aday |
+|---|---|---|
+| yalnız format kapısıyla geçen | 1 | **2** |
+| yalnız birleşik kapıyla geçen | 0 | **1** |
+
+**İki ders var ve ikincisi daha önemli.**
+
+Birincisi: kapı tek yönlü değil. `es Fritz Gerlich` birleşik 2,03 ile eşiği
+geçiyordu ama iki rafın **hiçbirinde** yeterli değil (shorts 1,81, uzun 1,58) —
+harmanlanmış ortalama onu kayırıyormuş. Format kapısı bunu doğru şekilde
+eliyor. "Daha çok aday geçirir" değil, "iki yönde de daha keskin ölçer".
+
+İkincisi: **ince taban çizgisi kalibreyi oynatıyor.** Aynı `es Fritz Gerlich`
+8 adaylık es tabanında shorts 3,06 iken, taban 17 adaya çıkınca 1,81'e düştü.
+Yani yukarıdaki üç satırlık kanıt tablosu ince bir tabandan okunmuştu.
+`ASGARI_TABAN_ORNEK = 5` istatistiksel güven için değil, **hiç yoktan iyi**
+olduğu için seçilmişti; bu ölçüm o eşiğin gerçekte ne kadar gevşek olduğunu
+gösteriyor. Eşiğin yükseltilmesi ayrı bir karar ve daha çok veri istiyor —
+ama bugünden bilinen şu: **5 örneklemli bir tabandan okunan kalibre
+raporlanabilir bir sayı değil, geçici bir tahmindir.**
+
+Ölçüm hâlâ tamamlanmadı: 114 adayın 33'ü kırılımsız (günlük sondaj tavanı).
+Tamamlandığında bu bölüm son kez güncellenecek.
