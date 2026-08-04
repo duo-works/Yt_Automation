@@ -4,7 +4,9 @@ Bu dosya Claude Code, Codex ve benzeri ajanların bu repo'da çalışırken uyma
 
 ## Bağlam
 
-Bu repo `duo-works` organizasyonuna ait, iki kişilik bir ekip tarafından geliştiriliyor. **Her iki geliştirici de kendi AI ajanlarıyla aynı repo üzerinde çalışıyor.** Görev takibi **Notion**'da, kod review **GitHub PR**'da yapılır. GitHub Issues kapalıdır.
+Bu repo `duo-works` organizasyonuna ait, iki kişilik bir ekip tarafından geliştiriliyor. **Her iki geliştirici de kendi AI ajanlarıyla aynı repo üzerinde çalışıyor.** Görev takibi **Notion**'da, kod değişiklikleri ve teknik tartışma **GitHub PR**'da tutulur. GitHub Issues kapalıdır.
+
+**İnsan review veya onayı merge ön koşulu değildir** — kapıyı CI tutuyor (`ci-ok` + `pr-title-ok`). Gerekçe: [ADR-0012](docs/decisions/0012-org-repo-politikasi.md).
 
 ---
 
