@@ -362,14 +362,20 @@ def bosluk_ozellikleri(
                 "name": {"shorts": "Shorts", "uzun": "Uzun"}.get(kayit.onerilen_format, "Belirsiz")
             }
         },
-        # Hedef kanal yalnızca kapıyı **geçen** formattan yazılıyor (DW-58).
+        # Hedef kanal yalnızca **kapının tamamını** geçen adaya yazılıyor.
         # `Önerilen format` sıralama bilgisi de taşıyabiliyor (kapıyı hiçbiri
         # geçmese bile en iyisini gösteriyor); kanal ataması ise bir karar ve
-        # eşiği geçmemiş bir formatı kanala yazmak o kararı uydurmak olurdu.
+        # eşiği geçmemiş bir adayı kanala yazmak o kararı uydurmak olurdu.
+        #
+        # ⚠️ Burada `gecen_formatlar` TEK BAŞINA yetmiyor ve bu ölçüldü
+        # (2026-08-04): geçen formatı olan 8 adayın 5'i mutlak talep kapısında
+        # eleniyordu ve yine de kanal ataması alıyordu. Aktarım yolunda hiç
+        # görünmedi çünkü oraya zaten yalnızca kapıyı geçen aday giriyor;
+        # `bosluklari_guncelle` elenmişlere de dokununca ortaya çıktı.
         "Hedef kanal": {
             "select": (
                 {"name": {"shorts": "Shorts kanal", "uzun": "Uzun kanal"}[gecen[0]]}
-                if (gecen := kayit.gecen_formatlar)
+                if (gecen := kayit.gecen_formatlar) and bosluk.red_gerekcesi(kayit) is None
                 else None
             )
         },

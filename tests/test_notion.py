@@ -665,3 +665,25 @@ def test_yazilmamis_aday_atlanir(yol: Path, wiki_aday, pazar, monkeypatch):
     assert sonuc.guncellenen == 0
     assert sonuc.sayfasiz > 0
     assert sahte.cagrilar == []
+
+
+def test_elenen_adaya_kanal_atanmaz(yol: Path, wiki_aday, pazar):
+    """Geçen formatı olsa bile kapıyı geçemeyen adaya kanal yazılmamalı.
+
+    Ölçüldü (2026-08-04): geçen formatı olan 8 adayın 5'i mutlak talep
+    kapısında eleniyordu ve yine de `Hedef kanal` alıyordu. Kanal ataması bir
+    karar; elenmiş adaya karar yazmak o kararı uydurmaktır. Aktarım yolunda
+    görünmüyordu çünkü oraya yalnızca kapıyı geçen aday giriyor — kusur
+    `bosluklari_guncelle` elenmişlere de dokununca ortaya çıktı.
+    """
+    pazar()
+    # Talebi eşiğin altında ama arzı bomboş: format kalibresi yüksek çıkar,
+    # mutlak talep kapısı yine de eler.
+    wiki_aday("ZAYIF", "Talebi_Dusuk", medyan_izlenme=50, okunma=100)
+    kayit = next(k for k in bosluk.bosluklar(yol) if k.qid == "ZAYIF")
+
+    assert bosluk.red_gerekcesi(kayit) is not None, "kurulum: aday elenmiş olmalı"
+    p = notion.bosluk_ozellikleri(kayit, gun="2026-08-04", kaynak_sayisi=3)
+    assert p["Hedef kanal"]["select"] is None
+    # Öneri alanı yine dolu: sıralama bilgisi taşıyor, karar taşımıyor.
+    assert p["Önerilen format"]["select"]["name"]
