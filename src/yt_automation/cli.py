@@ -33,6 +33,7 @@ from .trend import (
     notion,
     sicrama,
     siniflandirici,
+    tiktok,
     toplayici,
     video_sinif,
     wikipedia,
@@ -495,9 +496,17 @@ def _konu_gtrends(*, kuru: bool) -> int:
         return 0
 
     sonuc = gtrends.isle(yol)
-    print(sonuc.ozet())
+    print(f"google-trends · {sonuc.ozet()}")
     for hata in sonuc.hatalar[:5]:
         print(f"  hata: {hata}", file=sys.stderr)
+
+    # TikTok elle beslemesi aynı boruyu kullanıyor (ADR-0010). Dosya yoksa
+    # sessizce atlanıyor — yapılandırılmamış bir kaynak hata değil.
+    tt = tiktok.isle(yol)
+    if tt.terim:
+        print(f"tiktok · {tt.ozet()}")
+    elif tiktok.dosya_yolu() is None:
+        print(f"tiktok · atlandı ({tiktok.DOSYA_DEGISKENI} tanımlı değil)")
     # Terim gelmemesi hata (RSS kırık olabilir), eşleşme az olması değil:
     # magazin/spor ağırlıklı listede düşük eşleşme normal gün.
     return 1 if sonuc.terim == 0 else 0
