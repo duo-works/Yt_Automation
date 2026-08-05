@@ -127,9 +127,7 @@ def test_yenileme_basarisizsa_tarayici_akisina_dusulur(tmp_path):
 
     with (
         patch.object(oauth.Credentials, "from_authorized_user_file", return_value=bayat),
-        patch.object(
-            oauth.InstalledAppFlow, "from_client_secrets_file", return_value=sahte_akis
-        ),
+        patch.object(oauth.InstalledAppFlow, "from_client_secrets_file", return_value=sahte_akis),
     ):
         sonuc = oauth._yenile_veya_yetkilendir(client_secret_yolu, token_yolu)
 
@@ -160,9 +158,7 @@ def test_kapsam_eksikse_eski_token_kullanilmaz(tmp_path):
 
     with (
         patch.object(oauth.Credentials, "from_authorized_user_file", return_value=dar_kapsamli),
-        patch.object(
-            oauth.InstalledAppFlow, "from_client_secrets_file", return_value=sahte_akis
-        ),
+        patch.object(oauth.InstalledAppFlow, "from_client_secrets_file", return_value=sahte_akis),
     ):
         sonuc = oauth._yenile_veya_yetkilendir(client_secret_yolu, token_yolu)
 
