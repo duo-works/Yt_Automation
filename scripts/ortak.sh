@@ -45,6 +45,28 @@ NOBET="$GUNLUK_DIZIN/.son-basarili"
 
 kaydet() { printf '%s  %s\n' "$(date '+%H:%M:%S')" "$*" >> "$GUNLUK"; }
 
+# Bir adımın çıktısı "günlük kota tavanı doldu" mu diyor?
+#
+# Tavan tam olarak durdurmak için var; dolması bütçe hâli, arıza DEĞİL. Kota
+# biten adım sıfırdan farklı dönüyor ve bunu hata sayan betik, tavanın dolduğu
+# her saat bildirim gönderir — DW-47'nin bitirdiği yanlış alarm düzenine dönüş.
+#
+# Ölçüldü (2026-08-04): geri doldurma işi günlük kotayı bitirdi ve saatlik
+# derin tarama 12:08'den itibaren 5 kez "düştü", her seferinde bildirim gitti.
+# Daha kötüsü nöbet damgası yazılmadı, yani nöbetçi otomasyonu sağlıksız
+# gösterdi — gerçekten bozulmuş bir hatla kotası dolmuş bir hat aynı göründü.
+#
+# ⚠️ `grep -i` KULLANMA. Türkçe'de ASCII "I" ile dotless "ı" ayrı harfler ve
+# `grep -i` ikisini katlamaz; "kota tavanında durdu" deseni "KOTA TAVANINDA
+# DURDU" çıktısını hiç tutmaz. Tam literal aranıyor, testle kilitli.
+#
+# Desen tek yerde: aynı kontrol `gunluk-huni.sh` ve `saatlik-tarama.sh`'ta
+# ayrı ayrı dursaydı biri düzeltilip diğeri unutulurdu — bu kusur zaten öyle
+# doğdu (huni tarafı düzeltildi, saatlik taraf gözden kaçtı).
+KOTA_TAVANI_METNI="KOTA TAVANINDA DURDU"
+
+kota_tavani_mi() { printf '%s' "$1" | grep -q "$KOTA_TAVANI_METNI"; }
+
 # macOS bildirimi. `launchd.hata.log`'a yazmak yetmiyor — kimse okumuyor.
 # 2026-07-30: görev dal değişimi yüzünden beş saat boyunca çıkış kodu 127 ile
 # öldü, hata günlüğüne beş satır düştü ve tesadüfen fark edildi. Sessiz

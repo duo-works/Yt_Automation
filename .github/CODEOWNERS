@@ -1,12 +1,17 @@
-# Her dosyanın sahibi çekirdek ekiptir → her PR en az bir kişi tarafından gözden geçirilir.
-# GitHub, PR açan kişiyi kendi PR'ının reviewer'ı olarak atamaz; bu yüzden iki kişilik
-# ekipte bu satır "diğer kişi otomatik reviewer olur" anlamına gelir.
+# Bu dosya artık yalnızca **haber verir**, kapı tutmaz.
+#
+# Eskiden `* @duo-works/core` satırı vardı ve her dosyayı çekirdek ekibe sahiplendiriyordu.
+# İki kişilik bir ekipte bu, her PR'ın diğerinin onayını beklemesi demekti ve 28 PR'lık
+# bir yığında karşılıklı kilitlenmeye dönüştü (DW-70). Satır kaldırıldı; protection'da da
+# `required_pull_request_reviews` tümüyle `null` (ADR-0012).
+#
+# Aşağıdaki satırlar duruyor çünkü işlevleri farklı: süreç dosyalarına dokunan bir PR
+# açıldığında diğer kişiye otomatik bildirim gider. Bildirim merge'i **bloke etmez** —
+# review şartı protection'da olmadığı sürece CODEOWNERS tek başına kapı kuramaz.
 #
 # Not: @duo-works/core takımı org kurulumunda oluşturulur ve iki üyeyi de içerir.
 
-* @duo-works/core
-
-# Süreç dosyalarında değişiklik ekstra dikkat ister
+# Süreç dosyalarında değişiklik ekstra dikkat ister — bilgi amaçlı reviewer ataması
 /.github/       @duo-works/core
 /CONTRIBUTING.md @duo-works/core
 /CLAUDE.md      @duo-works/core

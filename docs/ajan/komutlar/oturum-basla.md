@@ -72,11 +72,39 @@ Dönen her kayıt için `Dokunulan alanlar` ile senin gireceğin dosyaları kar�
 
 Kesişme varsa: **başlama.** Kullanıcıya hangi kayıtla, hangi dosyalarda çakıştığını söyle, ne yapılacağını sor.
 
-## 5. Son 7 günün devirlerini oku
+## 5. Git durumunu kontrol et
+
+Notion çakışması tek risk değil. Kod tarafında da üç şey sessizce yanlış
+olabilir; üçü de tek komutla görülür:
+
+```bash
+git fetch origin
+git status --short --branch
+git log --oneline HEAD..origin/main | head      # main'de olup sende olmayan
+gh pr list --head "$(git branch --show-current)" --state all \
+  --json number,state,mergedAt                  # bu dalın PR'ı ne durumda
+```
+
+| Bulgu | Ne demek |
+|---|---|
+| `main`'de sende olmayan commit var | dalın geride; devam etmeden önce rebase gerekebilir |
+| Dalın PR'ı `MERGED` | **iş bitmiş.** Bu dala commit atma; `origin/main`'den yeni dal aç |
+| Çalışma ağacı kirli | önceki oturumdan kalan iş olabilir — kullanıcıya sor |
+
+⚠️ **Squash-merge tuzağı:** merge sonrası orijinal commit'ler `main`'in atası
+görünmez, yani `git log main..HEAD` dolu çıkar ve dal merge edilmemiş gibi
+durur. Karar için ata ilişkisine değil **PR durumuna** ya da içerik
+karşılaştırmasına (`git diff origin/main HEAD -- <dosya>`) bak.
+
+Ölçüldü (2026-08-04): bir oturum kendi dalı merge edildikten sonra saatlerce
+o dala commit atmaya devam etti ve "hiçbir şey merge olmuyor" tespitini
+tekrarladı. Bu kontrol o oturumu ilk dakikada uyarırdı.
+
+## 6. Son 7 günün devirlerini oku
 
 `Tür = "Devir"` veya `Durum = "Devredildi"` olan son kayıtlar. Yarım kalmış iş, sıradaki adım ve dikkat notları orada. Bulduklarını kullanıcıya özetle.
 
-## 6. Kendi kaydını aç
+## 7. Kendi kaydını aç
 
 | Alan | Değer |
 |---|---|
@@ -93,9 +121,9 @@ Kesişme varsa: **başlama.** Kullanıcıya hangi kayıtla, hangi dosyalarda ça
 
 Ayrı bir çalışma dizininde (git worktree) çalışıyorsan worktree yolunu da `Dokunulan alanlar`a yaz.
 
-## 7. Raporla
+## 8. Raporla
 
-Kullanıcıya kısaca: kimlik ne belirlendi, kanarya göründü mü, kaç aktif kayıt vardı, çakışma var mıydı, hangi devir notları bulundu, kaydın açıldı mı.
+Kullanıcıya kısaca: kimlik ne belirlendi, kanarya göründü mü, kaç aktif kayıt vardı, çakışma var mıydı, **git durumu temiz miydi (dal geride mi, PR'ı merge edilmiş mi)**, hangi devir notları bulundu, kaydın açıldı mı.
 
 ## Sonrası — kontrol bir kerelik değil
 
