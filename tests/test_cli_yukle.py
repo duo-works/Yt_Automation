@@ -53,3 +53,60 @@ def test_yukleme_kalici_sayaci_kullanir(monkeypatch, tmp_path: Path):
     assert cli._yukle(tmp_path, "egitim") == 0
     assert gorulen, "yükleme hattı KaliciSayac kurmadı — bellekteki sayaç kota defterini görmez"
     assert gorulen[0][1] == "yukleme", "harcama kendi `surec` etiketiyle yazılmalı"
+
+
+def test_oauth_yapilandirma_hatasi_anlasilir_basiliyor(monkeypatch, tmp_path: Path, capsys):
+    """Eksik ortam değişkeni traceback değil, yol gösteren mesaj vermeli.
+
+    `oauth._yol` bu mesajı özenle yazıyor ("…`.env` dosyanızda ayarlayın") ama
+    `_yukle` istisnayı yakalamadığı için mesaj ham yığın izinin içinde
+    kayboluyordu. Mesajın var olma sebebi tam olarak o an: hattı ilk kez kuran
+    kişi, elinde yeni indirdiği client secret dosyasıyla.
+    """
+    from yt_automation import kanal as kanal_modulu
+    from yt_automation import oauth
+
+    monkeypatch.setenv("YT_OTOMASYON_VERI", str(tmp_path))
+    monkeypatch.setattr(cli, "kuyrugu_oku", lambda dizin, profil: [])
+    monkeypatch.setattr(
+        kanal_modulu,
+        "getir",
+        lambda k: kanal_modulu.Kanal(kimlik=k, ad=k, cocuk_icerigi=False),
+    )
+
+    def eksik_yapilandirma():
+        raise oauth.OAuthYapilandirmaHatasi("YT_CLIENT_SECRET_PATH tanımlı değil. .env…")
+
+    monkeypatch.setattr(oauth, "servis_olustur", eksik_yapilandirma)
+
+    assert cli._yukle(tmp_path, "muezza") == 1
+
+    cikti = capsys.readouterr()
+    assert "YT_CLIENT_SECRET_PATH" in cikti.err
+    assert "Traceback" not in (cikti.out + cikti.err)
+
+
+def test_bos_kuyrukta_oauth_yine_de_kurulur(monkeypatch, tmp_path: Path):
+    """Boş dizinle çağrı, hiçbir şey yüklemeden yetkilendirmeyi tetiklemeli.
+
+    İlk kurulumun güvenli provası bu: `ytoto yukle <boş-dizin>` tarayıcı
+    akışını açar, token'ı yazar ve döngü hiç dönmediği için tek bir video bile
+    gitmez. Sıra bozulup `servis_olustur` döngünün içine alınırsa bu yol
+    sessizce kaybolur.
+    """
+    from yt_automation import kanal as kanal_modulu
+    from yt_automation import oauth
+
+    monkeypatch.setenv("YT_OTOMASYON_VERI", str(tmp_path))
+    monkeypatch.setattr(cli, "kuyrugu_oku", lambda dizin, profil: [])
+    monkeypatch.setattr(
+        kanal_modulu,
+        "getir",
+        lambda k: kanal_modulu.Kanal(kimlik=k, ad=k, cocuk_icerigi=False),
+    )
+
+    cagrildi: list[bool] = []
+    monkeypatch.setattr(oauth, "servis_olustur", lambda: cagrildi.append(True) or object())
+
+    assert cli._yukle(tmp_path, "muezza") == 0
+    assert cagrildi == [True], "boş kuyrukta da OAuth kurulmalı — provanın dayandığı davranış"
