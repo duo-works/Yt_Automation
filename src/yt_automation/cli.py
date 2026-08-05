@@ -792,7 +792,13 @@ def _yukle(dizin: Path, kanal_kimligi: str) -> int:
         # için yazıldı.
         sayac = kota.KaliciSayac(depo.varsayilan_yol(), surec="yukleme")
         for video in kuyruk:
-            video_id = yukle_ve_dogrula(video, profil, servis, sayac)
+            video_id = yukle_ve_dogrula(
+                video,
+                profil,
+                servis,
+                sayac,
+                uyar=lambda mesaj: print(f"⚠️ {mesaj}", file=sys.stderr),
+            )
             print(f"Yüklendi ve doğrulandı: {video.baslik} — {video_id}")
         print(f"Kota: {sayac.ozet()}")
         return 0

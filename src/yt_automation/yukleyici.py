@@ -60,7 +60,34 @@ def yukleme_govdesi(video: Video, kanal: Kanal) -> dict[str, Any]:
     }
 
 
-def _bayraklari_dogrula(beklenen: dict[str, Any], gercek: dict[str, Any]) -> None:
+def _bayraklari_dogrula(beklenen: dict[str, Any], gercek: dict[str, Any]) -> list[str]:
+    """Beyanları YouTube'un döndürdüğüyle karşılaştırır.
+
+    **Üç durum var, ikisi karıştırılmamalı:**
+
+    - alan döndü ve eşleşiyor → doğrulandı
+    - alan döndü ama farklı → beyan tutmadı, **hata**
+    - alan hiç dönmedi → doğrulanamadı; hata DEĞİL, döndürülüp raporlanır
+
+    Üçüncüsü ayrılmazsa `gercek.get(alan)` `None` verir, beklenen `True` ile
+    eşleşmez ve **her başarılı yüklemeden sonra** hata atılır: video YouTube'da,
+    1.651 birim harcanmış, çağıran taraf yüklemenin başarısız olduğunu sanıyor
+    ve muhtemelen tekrar deniyor — bedel iki katına çıkıyor.
+
+    Ölçüldü (2026-08-05, `videos.list?part=status`, anahtarla okuma):
+    `containsSyntheticMedia`, `selfDeclaredMadeForKids` ve `publishAt` yanıtta
+    **yok**; yalnızca `privacyStatus` ve `madeForKids` dönüyor. Bu okuma
+    sahibi olmayan bir okumaydı — belgelere göre `selfDeclaredMadeForKids`
+    yalnızca sahibine dönüyor, dolayısıyla OAuth'lu okumada bazıları gelebilir.
+    Kesin cevabı ilk gerçek yükleme verecek; kod o zamana kadar iki yönde de
+    doğru davranıyor: gelen alan denetleniyor, gelmeyen alan sessizce
+    "başarısız" sayılmıyor.
+
+    Yön asimetriktir: dönmeyen alanı hata saymak pahalı ve yanlış; gerçekten
+    tutmayan bir beyanı kaçırmak ise ancak alan hiç dönmediğinde mümkün — o da
+    zaten doğrulanamaz durum.
+    """
+    dogrulanamayan: list[str] = []
     for alan in (
         "privacyStatus",
         "publishAt",
@@ -69,10 +96,14 @@ def _bayraklari_dogrula(beklenen: dict[str, Any], gercek: dict[str, Any]) -> Non
     ):
         if alan not in beklenen:
             continue
-        if gercek.get(alan) != beklenen[alan]:
+        if alan not in gercek:
+            dogrulanamayan.append(alan)
+            continue
+        if gercek[alan] != beklenen[alan]:
             raise YuklemeDogrulamaHatasi(
-                f"{alan}: beklenen {beklenen[alan]!r}, YouTube {gercek.get(alan)!r} döndürdü"
+                f"{alan}: beklenen {beklenen[alan]!r}, YouTube {gercek[alan]!r} döndürdü"
             )
+    return dogrulanamayan
 
 
 def yukle_ve_dogrula(
@@ -85,6 +116,10 @@ def yukle_ve_dogrula(
     sayac: Sayac | KaliciSayac,
     *,
     medya_fabrikasi: Callable[..., Any] = MediaFileUpload,
+    # Doğrulanamayan bayrakları bildiren geri çağırım. Sessiz atlamak bu
+    # repoda kabul edilen bir şey değil: "doğrulandı" ile "doğrulanamadı"
+    # operatöre görünmeli, yoksa beyanların gerçekten yazıldığı sanılır.
+    uyar: Callable[[str], None] | None = None,
 ) -> str:
     """Videoyu resumable yükler, thumbnail'i gönderir ve beyanları doğrular.
 
@@ -118,5 +153,11 @@ def yukle_ve_dogrula(
     ogeler = dogrulama.get("items", [])
     if not ogeler:
         raise YuklemeDogrulamaHatasi(f"yüklenen video doğrulamada bulunamadı: {video_id}")
-    _bayraklari_dogrula(govde["status"], ogeler[0].get("status", {}))
+    dogrulanamayan = _bayraklari_dogrula(govde["status"], ogeler[0].get("status", {}))
+    if dogrulanamayan and uyar is not None:
+        uyar(
+            f"{video_id}: YouTube şu alanları geri döndürmedi, beyan "
+            f"doğrulanamadı — {', '.join(dogrulanamayan)}. Beyan gönderildi; "
+            "yalnızca geri okunamıyor."
+        )
     return video_id

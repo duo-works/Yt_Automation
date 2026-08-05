@@ -151,3 +151,52 @@ def test_beyan_bayragi_yanlissa_dogrulama_hatasi(tmp_path: Path):
 
     with pytest.raises(YuklemeDogrulamaHatasi, match="containsSyntheticMedia"):
         yukle_ve_dogrula(v, KANAL, SahteServis(yanlis), Sayac())
+
+
+def test_donmeyen_alan_hata_sayilmaz_ama_raporlanir(tmp_path: Path):
+    """YouTube alanı hiç döndürmezse "doğrulanamadı" demek gerekir, "başarısız" değil.
+
+    Ölçüldü (2026-08-05, videos.list?part=status): `containsSyntheticMedia`,
+    `selfDeclaredMadeForKids` ve `publishAt` yanıtta yok. Ayrım yapılmazsa
+    `gercek.get(alan)` None verir, beklenen True ile eşleşmez ve HER BAŞARILI
+    yüklemeden sonra hata atılır — video YouTube'da, 1.651 birim harcanmış,
+    çağıran taraf başarısız sandığı için tekrar dener.
+    """
+    sayac = Sayac()
+    uyarilar: list[str] = []
+    # YouTube yalnızca privacyStatus döndürüyor; diğer üç beyan geri okunamıyor.
+    servis = SahteServis({"privacyStatus": "private"})
+
+    video_id = yukle_ve_dogrula(
+        video(tmp_path),
+        KANAL,
+        servis,
+        sayac,
+        medya_fabrikasi=MedyaFabrikasi(),
+        uyar=uyarilar.append,
+    )
+
+    assert video_id == "video123"
+    assert len(uyarilar) == 1
+    assert "selfDeclaredMadeForKids" in uyarilar[0]
+    assert "containsSyntheticMedia" in uyarilar[0]
+
+
+def test_donen_ama_tutmayan_alan_hala_hata(tmp_path: Path):
+    """Ayrım gevşetilirken gerçek denetim kaybedilmemeli.
+
+    Alan DÖNDÜ ve beklenenden farklıysa beyan tutmamış demektir — bu hâlâ
+    hata. Kaybedilseydi, `private` gönderip `public` çıkan bir video sessizce
+    kabul edilirdi.
+    """
+    sayac = Sayac()
+    servis = SahteServis({"privacyStatus": "public"})
+
+    with pytest.raises(YuklemeDogrulamaHatasi, match="privacyStatus"):
+        yukle_ve_dogrula(
+            video(tmp_path),
+            KANAL,
+            servis,
+            sayac,
+            medya_fabrikasi=MedyaFabrikasi(),
+        )
