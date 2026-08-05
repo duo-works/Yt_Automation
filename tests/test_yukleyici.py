@@ -7,7 +7,9 @@ from yt_automation.kanal import Kanal
 from yt_automation.kota import KotaAsimi, Sayac
 from yt_automation.video import Video
 from yt_automation.yukleyici import (
+    YanlisKanalHatasi,
     YuklemeDogrulamaHatasi,
+    kanali_dogrula,
     yukle_ve_dogrula,
     yukleme_govdesi,
 )
@@ -200,3 +202,85 @@ def test_donen_ama_tutmayan_alan_hala_hata(tmp_path: Path):
             sayac,
             medya_fabrikasi=MedyaFabrikasi(),
         )
+
+
+class SahteKanallar:
+    """`channels.list?mine=true` yanıtı."""
+
+    def __init__(self, kanal_id: str | None, ad: str = "Bir Kanal"):
+        self.cagri = None
+        self.kanal_id = kanal_id
+        self.ad = ad
+
+    def list(self, **kwargs):
+        self.cagri = kwargs
+        ogeler = [{"id": self.kanal_id, "snippet": {"title": self.ad}}] if self.kanal_id else []
+        return Calistir({"items": ogeler})
+
+
+class KanalliServis(SahteServis):
+    def __init__(self, dogrulama_statusu, kanal_id: str | None, ad: str = "Bir Kanal"):
+        super().__init__(dogrulama_statusu)
+        self.kanallar = SahteKanallar(kanal_id, ad)
+
+    def channels(self):
+        return self.kanallar
+
+
+KIMLIKLI = Kanal(
+    kimlik="egitim",
+    ad="Eğitim",
+    cocuk_icerigi=False,
+    youtube_kanal_id="UCbeklenen",
+)
+
+
+def test_yanlis_kanalda_hicbir_sey_yuklenmez():
+    """Ölçülmüş kusur (2026-08-05): token beklenen kanal yerine kişisel kanala bağlandı.
+
+    Kullanıcı kendi Google hesabıyla giriş yaptı, Google onun kanalını seçti ve
+    kod bunu göremedi — hangi kanalda olduğunu hiç sormuyordu. Yükleme
+    yapılsaydı video yanlış kanala giderdi; geri alması YouTube tarafında elle
+    iş. Elle bir `channels.list` çağrısı yakaladı, kod yakalamadı.
+    """
+    servis = KanalliServis({}, "UCbaskasi", ad="Kişisel Kanal")
+    sayac = Sayac()
+
+    with pytest.raises(YanlisKanalHatasi, match="Kişisel Kanal"):
+        kanali_dogrula(servis, KIMLIKLI, sayac)
+
+    # Hata mesajı ne yapılacağını söylemeli.
+    try:
+        kanali_dogrula(servis, KIMLIKLI, sayac)
+    except YanlisKanalHatasi as hata:
+        assert "UCbeklenen" in str(hata), "beklenen kanal da yazılmalı"
+        assert "yeniden yetkilendir" in str(hata).lower()
+
+
+def test_dogru_kanalda_gecer_ve_bir_birim_harcar():
+    servis = KanalliServis({}, "UCbeklenen")
+    sayac = Sayac()
+
+    assert kanali_dogrula(servis, KIMLIKLI, sayac) == "UCbeklenen"
+    assert sayac.kayit == [("channels.list", 1)]
+    assert servis.kanallar.cagri == {"part": "snippet", "mine": True}
+
+
+def test_kimliksiz_profilde_dogrulama_atlanir_ama_uyarilir():
+    """Sessiz atlama, korumanın hiç olmamasıyla aynı şey olurdu."""
+    servis = KanalliServis({}, "UCherhangi")
+    sayac = Sayac()
+    uyarilar: list[str] = []
+
+    assert kanali_dogrula(servis, KANAL, sayac, uyar=uyarilar.append) is None
+    assert sayac.kayit == [], "doğrulama yapılmadıysa kota da harcanmamalı"
+    assert len(uyarilar) == 1
+    assert "youtube_kanal_id" in uyarilar[0]
+
+
+def test_kanal_bulunamazsa_durulur():
+    """Boş yanıt 'doğrulandı' sayılmamalı — token yanlış hesapla alınmış olabilir."""
+    servis = KanalliServis({}, None)
+
+    with pytest.raises(YanlisKanalHatasi, match="bulunamadı"):
+        kanali_dogrula(servis, KIMLIKLI, Sayac())

@@ -41,7 +41,11 @@ from .trend import (
     wikipedia,
 )
 from .video import MetadataHatasi, kuyrugu_oku
-from .yukleyici import YuklemeDogrulamaHatasi, yukle_ve_dogrula
+from .yukleyici import (
+    YuklemeDogrulamaHatasi,
+    kanali_dogrula,
+    yukle_ve_dogrula,
+)
 
 ANAHTAR_DEGISKENI = "YOUTUBE_API_KEY"
 
@@ -791,6 +795,21 @@ def _yukle(dizin: Path, kanal_kimligi: str) -> int:
         # istek de kotadan yediği için bedel iki kez ödenir. DW-24 tam bunun
         # için yazıldı.
         sayac = kota.KaliciSayac(depo.varsayilan_yol(), surec="yukleme")
+
+        # ⚠️ Kanal doğrulaması yükleme döngüsünden ÖNCE ve kuyruk boş olsa da
+        # çalışıyor (DW-83). İkisi de bilinçli: yanlış kanal tespit edilirse
+        # tek bir video bile gitmemeli, ve boş kuyrukla yapılan yetkilendirme
+        # provası da hangi kanala bağlandığını söylemeli — bu kusur tam orada,
+        # provanın kendisinde yakalandı.
+        bagli = kanali_dogrula(
+            servis,
+            profil,
+            sayac,
+            uyar=lambda mesaj: print(f"⚠️ {mesaj}", file=sys.stderr),
+        )
+        if bagli:
+            print(f"Kanal doğrulandı: {profil.ad} ({bagli})")
+
         for video in kuyruk:
             video_id = yukle_ve_dogrula(
                 video,
@@ -832,7 +851,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Kuyruktaki metadata dosyalarını doğrula ve kota tahmini ver",
     )
     dogrula.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
-    dogrula.add_argument("--kanal", default="muezza", help="Kanal kimliği (varsayılan: muezza)")
+    dogrula.add_argument("--kanal", default="deneme", help="Kanal kimliği (varsayılan: deneme)")
 
     trend = altlar.add_parser("trend", help="Bölgesel trend listeleri")
     trend_altlar = trend.add_subparsers(dest="trend_komutu", required=True)
@@ -1009,7 +1028,7 @@ def main(argv: list[str] | None = None) -> int:
     kg.add_argument("--kuru", action="store_true", help="Hiç yazma, terim ve eşleşmeleri göster")
     yukle = altlar.add_parser("yukle", help="Kuyruktaki videoları yükle ve bayrakları doğrula")
     yukle.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
-    yukle.add_argument("--kanal", default="muezza", help="Kanal kimliği (varsayılan: muezza)")
+    yukle.add_argument("--kanal", default="deneme", help="Kanal kimliği (varsayılan: deneme)")
 
     # Köprünün tüketici ucu: video hattı adayı buradan alır ve durumunu
     # buradan ilerletir. Notion istemcisi yazmasına gerek yok — sözleşmenin
