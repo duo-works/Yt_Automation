@@ -41,11 +41,25 @@ def test_zamanli_video_private_ve_utc_publish_at_ile_gider(tmp_path: Path):
     }
 
 
-def test_zamansiz_video_dogrudan_public_gider(tmp_path: Path):
+def test_zamansiz_video_yayina_cikmaz(tmp_path: Path):
+    """Yayın tarihi yoksa video yüklenir ama **private** kalır.
+
+    Bu test eskiden tersini kilitliyordu (`== "public"`), yani kusuru
+    koruyordu. PRD'nin *v1'de OLMAYACAKLAR* listesinde "otomatik yayın kararı"
+    açıkça yazılı; tarihsiz bir videoyu anında herkese açmak tam olarak o karar
+    ve üstelik varsayılan yoldu — metadata'da bir satırı unutmanın cezası
+    "yayında" oluyordu.
+
+    Yön asimetrik: erken yayınlanan videoyu geri almak izlenme, öneri sinyali
+    ve çocuk içeriğinde uyum riski demek; geç yayınlanan videoyu yayınlamak
+    bir tık.
+    """
     govde = yukleme_govdesi(video(tmp_path), KANAL)
 
-    assert govde["status"]["privacyStatus"] == "public"
+    assert govde["status"]["privacyStatus"] == "private"
     assert "publishAt" not in govde["status"]
+    # Zamanlanmış hâl zaten `test_zamanli_video_private_ve_utc_publish_at_ile_gider`
+    # ile kilitli: orada da gizlilik `private`, yayını açan şey `publishAt`.
 
 
 class Calistir:

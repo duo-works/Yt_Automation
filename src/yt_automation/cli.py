@@ -779,7 +779,18 @@ def _yukle(dizin: Path, kanal_kimligi: str) -> int:
         profil = kanal.getir(kanal_kimligi)
         kuyruk = kuyrugu_oku(dizin, profil)
         servis = oauth.servis_olustur()
-        sayac = kota.Sayac()
+        # ⚠️ `KaliciSayac`, `Sayac` DEĞİL. Bu hat projenin en büyük kota
+        # tüketicisi (video başına 1.651 birim, günlük bütçenin altıda biri) ve
+        # bellekteki sayaç her çalıştırmada sıfırdan başlayıp diğer süreçleri
+        # görmüyordu. Trend, boşluk ve niş hatlarının üçü de deftere yazarken
+        # yalnızca bu yazmıyordu.
+        #
+        # Somut sonuç: gün içinde 897 birim harcanmışken bellekteki sayaç
+        # 10.000 kalan görür, altı videoya izin verir, bütçe beşe yeter ve
+        # altıncı `videos.insert` 1.600 birim harcayıp 403 alır — reddedilen
+        # istek de kotadan yediği için bedel iki kez ödenir. DW-24 tam bunun
+        # için yazıldı.
+        sayac = kota.KaliciSayac(depo.varsayilan_yol(), surec="yukleme")
         for video in kuyruk:
             video_id = yukle_ve_dogrula(video, profil, servis, sayac)
             print(f"Yüklendi ve doğrulandı: {video.baslik} — {video_id}")

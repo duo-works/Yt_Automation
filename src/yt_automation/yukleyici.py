@@ -8,7 +8,7 @@ from typing import Any
 from googleapiclient.http import MediaFileUpload
 
 from .kanal import Kanal
-from .kota import Sayac
+from .kota import KaliciSayac, Sayac
 from .video import Video, yayin_tarihini_utc
 
 YUKLEME_TEKRAR_SAYISI = 3
@@ -30,8 +30,19 @@ def yukleme_govdesi(video: Video, kanal: Kanal) -> dict[str, Any]:
         raise ValueError("video çocuk içeriği bayrağı kanal profiliyle çelişiyor")
 
     yayin = _rfc3339_utc(video)
+    # ⚠️ Gizlilik HER ZAMAN `private`. Yayın tarihi varsa `publishAt` ile
+    # zamanlanır; yoksa video yüklenir ama yayına çıkmaz.
+    #
+    # Önceki hâli tersiydi (tarih yoksa `public`) ve PRD'nin *v1'de
+    # OLMAYACAKLAR* listesindeki "otomatik yayın kararı" maddesiyle doğrudan
+    # çelişiyordu — üstelik VARSAYILAN yol olarak, yani metadata'da bir satırı
+    # unutmanın cezası "yayında" oluyordu.
+    #
+    # Yanlış yöne düşmenin bedeli asimetrik: erken yayınlanan videoyu geri
+    # almak izlenme, öneri sinyali ve çocuk içeriğinde uyum riski demek; geç
+    # yayınlanan videoyu yayınlamak bir tık. Yayınlama insanın açık eylemi.
     status: dict[str, Any] = {
-        "privacyStatus": "private" if yayin else "public",
+        "privacyStatus": "private",
         "selfDeclaredMadeForKids": kanal.cocuk_icerigi,
         "containsSyntheticMedia": video.sentetik_medya,
     }
@@ -68,7 +79,10 @@ def yukle_ve_dogrula(
     video: Video,
     kanal: Kanal,
     servis: Any,
-    sayac: Sayac,
+    # Union bilerek: üretimde `KaliciSayac` (süreçler arası defter, DW-24),
+    # testlerde `Sayac` (bellekte). İkisi de `harca()` sunuyor ve bu modül
+    # yalnızca onu kullanıyor.
+    sayac: Sayac | KaliciSayac,
     *,
     medya_fabrikasi: Callable[..., Any] = MediaFileUpload,
 ) -> str:
