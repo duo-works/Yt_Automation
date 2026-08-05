@@ -802,7 +802,19 @@ def _yukle(dizin: Path, kanal_kimligi: str) -> int:
             print(f"Yüklendi ve doğrulandı: {video.baslik} — {video_id}")
         print(f"Kota: {sayac.ozet()}")
         return 0
-    except (KeyError, MetadataHatasi, KotaAsimi, YuklemeDogrulamaHatasi) as hata:
+    # ⚠️ `OAuthYapilandirmaHatasi` bu listede olmalı ve gözden kaçmıştı.
+    # `oauth._yol` eksik ortam değişkeni için yol gösteren bir mesaj üretiyor
+    # ("YT_CLIENT_SECRET_PATH tanımlı değil. .env dosyanızda ayarlayın…") ama
+    # yakalanmadığı için kullanıcı onu ham traceback'in içinde görüyordu.
+    # Mesajın var olma sebebi tam olarak o an: hattı ilk kez kuran kişi.
+    # Ölçüldü 2026-08-05, ilk OAuth kurulumunda.
+    except (
+        KeyError,
+        MetadataHatasi,
+        KotaAsimi,
+        YuklemeDogrulamaHatasi,
+        oauth.OAuthYapilandirmaHatasi,
+    ) as hata:
         print(f"HATA: {hata}", file=sys.stderr)
         return 1
 
