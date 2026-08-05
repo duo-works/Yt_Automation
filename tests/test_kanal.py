@@ -57,11 +57,24 @@ def test_bilinmeyen_kanal_tanimlilari_soyluyor():
         kanal.getir("olmayan-kanal")
 
 
-def test_muezza_ingilizce_yayin_yapiyor():
+def test_deneme_kanali_ingilizce_yayin_yapiyor():
     """`varsayilan_dil` doğrudan `snippet.defaultLanguage`'a gidiyor.
 
-    muezza İngilizce Shorts kanalı (MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`:
-    35-50 saniye, 80-120 İngilizce kelime). Dataclass varsayılanı `tr` olduğu
-    için profil bunu açıkça geçmezse her videoya yanlış dil etiketi giderdi.
+    İngilizce Shorts hattı (MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`: 35-50
+    saniye, 80-120 İngilizce kelime). Dataclass varsayılanı `tr` olduğu için
+    profil bunu açıkça geçmezse her videoya yanlış dil etiketi giderdi.
     """
-    assert kanal.getir("muezza").varsayilan_dil == "en"
+    assert kanal.getir("deneme").varsayilan_dil == "en"
+
+
+def test_her_kayitli_kanalin_dogrulanabilir_kimligi_var():
+    """ID'siz profil, doğrulamayı sessizce atlayan profildir (DW-83).
+
+    `kanali_dogrula` ID yoksa uyarıp geçiyor — bilerek, ama bu bir kaçış kapısı
+    olmamalı. Kayıtlı bir profil eklenmişse kanalı ölçülmüş olmalı.
+    """
+    kimliksiz = [k.kimlik for k in kanal.KANALLAR.values() if not k.youtube_kanal_id]
+    assert kimliksiz == [], (
+        f"`youtube_kanal_id` olmayan profil(ler): {kimliksiz} — "
+        "`channels.list?mine=true` ile ölçüp ekleyin"
+    )

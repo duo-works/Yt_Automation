@@ -54,6 +54,27 @@ class Kanal:
 
     varsayilan_dil: str = "tr"
 
+    youtube_kanal_id: str | None = None
+    """Beklenen YouTube kanal kimliği (`UC…`) — **yönlendirme değil, doğrulama.**
+
+    `videos.insert` videoyu zaten token'ın bağlı olduğu kanala yüklüyor; bu alan
+    onu değiştirmiyor. İşi, yüklemeden önce "gerçekten doğru kanalda mıyız"
+    sorusunu sorulabilir kılmak.
+
+    ⚠️ Ölçüldü (2026-08-05): ilk yetkilendirmede token beklenen kanal yerine
+    kişisel bir kanala bağlandı — kullanıcı kendi Google hesabıyla giriş yaptı,
+    Google da doğal olarak onun kanalını seçti. Kod bunu göremedi çünkü hangi
+    kanalda olduğunu hiç sormuyordu. Elle bir `channels.list?mine=true` çağrısı
+    yakaladı.
+
+    DW-81'de "kanal ID'si gerekmiyor" diye yazılmıştı; yükleme açısından doğru
+    ama madalyonun diğer yüzü kaçırılmıştı. Yanlış kanala giden videoyu geri
+    almak YouTube tarafında elle iş.
+
+    `None` ise doğrulama **atlanır ve uyarılır** — profil ID'siz de kullanılsın
+    diye, ama sessizce değil.
+    """
+
     def __post_init__(self) -> None:
         if not self.kimlik:
             raise ValueError("kanal kimliği boş olamaz")
@@ -61,19 +82,28 @@ class Kanal:
 
 # Kayıtlı kanallar. Üretim kanalları (uzun + Shorts) açıldığında buraya eklenir.
 KANALLAR: dict[str, Kanal] = {
-    "muezza": Kanal(
-        kimlik="muezza",
-        ad="muezza (deneme kanalı)",
+    "deneme": Kanal(
+        kimlik="deneme",
+        ad="Mirza Sarıbıyık (kişisel — hat provası)",
         # Kanalda çocuklara yönelik içerik yok. Bu alan `selfDeclaredMadeForKids`
         # olarak gidiyor; yanlış işaretlemenin bedeli yukarıda yazılı.
         cocuk_icerigi=False,
-        # İngilizce Shorts kanalı — MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`:
-        # 35-50 saniye, 80-120 İngilizce kelime. Varsayılan `tr` olsaydı her
-        # videoya yanlış `defaultLanguage` giderdi.
+        # İngilizce Shorts — MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`: 35-50
+        # saniye, 80-120 İngilizce kelime. Varsayılan `tr` olsaydı her videoya
+        # yanlış `defaultLanguage` giderdi.
         varsayilan_dil="en",
         varsayilan_etiketler=("history", "shorts"),
+        # `channels.list?mine=true` ile ölçüldü (2026-08-05): token bu kanala
+        # bağlı. 0 abone, 0 video — yani hat provası burada yapılıyor.
+        youtube_kanal_id="UCcwguAj4haJDAEHOUixHrSA",
     ),
 }
+
+# ⚠️ `muezza` profili BİLEREK yok. Kanal Ömer'de ve token onunla değil kişisel
+# hesapla alındı; ID'si hiç ölçülmedi. ID'siz bir `muezza` profili eklemek,
+# doğrulamayı sessizce atlayan bir profil eklemek olurdu — DW-83'ün kapattığı
+# kusurun aynısı. muezza'ya yükleme yapılacaksa önce o hesapla yetkilendirilip
+# kanal ID'si ölçülmeli, sonra profil eklenmeli.
 
 
 def getir(kimlik: str) -> Kanal:

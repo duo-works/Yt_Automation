@@ -18,6 +18,63 @@ class YuklemeDogrulamaHatasi(RuntimeError):
     """Yüklenen videonun durumu gönderilen beyanlarla eşleşmiyor."""
 
 
+class YanlisKanalHatasi(RuntimeError):
+    """Token beklenen kanaldan başka bir kanala bağlı."""
+
+
+def kanali_dogrula(
+    servis: Any,
+    kanal: Kanal,
+    sayac: Sayac | KaliciSayac,
+    *,
+    uyar: Callable[[str], None] | None = None,
+) -> str | None:
+    """Token'ın gerçekten beklenen kanala bağlı olduğunu doğrular.
+
+    **Yüklemeden önce çağrılmalı.** `videos.insert` videoyu token'ın kanalına
+    yüklüyor ve o kanalın hangisi olduğunu hiçbir yerde sormuyorduk.
+
+    Ölçüldü (2026-08-05): ilk yetkilendirmede token beklenen kanal yerine
+    kişisel bir kanala bağlandı — kullanıcı kendi Google hesabıyla giriş yaptı,
+    Google da onun kanalını seçti. Yükleme yapılsaydı video yanlış kanala
+    giderdi; geri alması YouTube tarafında elle iş.
+
+    Maliyet 1 birim (`channels.list`). Video başına 1.651 birim harcayan bir
+    hatta bu ölçülemeyecek kadar küçük ve yanlış kanala yüklemenin bedeli
+    kotayla ölçülmüyor.
+
+    Profilde `youtube_kanal_id` yoksa doğrulama **atlanır ama uyarılır** —
+    sessiz atlama, korumanın hiç olmamasıyla aynı şey olurdu.
+    """
+    if kanal.youtube_kanal_id is None:
+        if uyar is not None:
+            uyar(
+                f"{kanal.kimlik}: profilde `youtube_kanal_id` yok, hangi kanala "
+                "yüklendiği doğrulanamıyor. `channels.list?mine=true` ile ölçüp "
+                "profile ekleyin."
+            )
+        return None
+
+    sayac.harca("channels.list")
+    yanit = servis.channels().list(part="snippet", mine=True).execute()
+    ogeler = yanit.get("items", [])
+    if not ogeler:
+        raise YanlisKanalHatasi(
+            "Yetkilendirilmiş hesaba bağlı kanal bulunamadı. Token doğru hesapla mı alındı?"
+        )
+
+    gercek = ogeler[0].get("id", "")
+    if gercek != kanal.youtube_kanal_id:
+        ad = ogeler[0].get("snippet", {}).get("title", "?")
+        raise YanlisKanalHatasi(
+            f"Token yanlış kanala bağlı: {ad!r} ({gercek}). "
+            f"Beklenen: {kanal.ad!r} ({kanal.youtube_kanal_id}). "
+            "Hiçbir şey yüklenmedi. Token'ı silip doğru hesapla yeniden "
+            "yetkilendirin."
+        )
+    return gercek
+
+
 def _rfc3339_utc(video: Video) -> str | None:
     if video.yayin_tarihi is None:
         return None
