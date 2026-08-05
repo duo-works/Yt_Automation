@@ -820,7 +820,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Kuyruktaki metadata dosyalarını doğrula ve kota tahmini ver",
     )
     dogrula.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
-    dogrula.add_argument("--kanal", default="cocuk", help="Kanal kimliği (varsayılan: cocuk)")
+    dogrula.add_argument("--kanal", default="muezza", help="Kanal kimliği (varsayılan: muezza)")
 
     trend = altlar.add_parser("trend", help="Bölgesel trend listeleri")
     trend_altlar = trend.add_subparsers(dest="trend_komutu", required=True)
@@ -997,7 +997,7 @@ def main(argv: list[str] | None = None) -> int:
     kg.add_argument("--kuru", action="store_true", help="Hiç yazma, terim ve eşleşmeleri göster")
     yukle = altlar.add_parser("yukle", help="Kuyruktaki videoları yükle ve bayrakları doğrula")
     yukle.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
-    yukle.add_argument("--kanal", default="cocuk", help="Kanal kimliği (varsayılan: cocuk)")
+    yukle.add_argument("--kanal", default="muezza", help="Kanal kimliği (varsayılan: muezza)")
 
     # Köprünün tüketici ucu: video hattı adayı buradan alır ve durumunu
     # buradan ilerletir. Notion istemcisi yazmasına gerek yok — sözleşmenin

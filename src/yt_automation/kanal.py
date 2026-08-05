@@ -1,12 +1,32 @@
 """Kanal profilleri — kategoriye özel her değer burada toplanır.
 
-PRD kararı: iki kanal olacak (önce çocuk, sonra eğitim/tarih/bilim) ve
-yükleme hattı kategoriden bağımsız kalacak. Bunu sağlamanın yolu bir
-soyutlama katmanı değil, **tek bir yer**: kategoriye göre değişen ne varsa
-bu dosyada durur, koda serpilmez.
+Yükleme hattı kategoriden bağımsız kalacak. Bunu sağlamanın yolu bir soyutlama
+katmanı değil, **tek bir yer**: kategoriye göre değişen ne varsa bu dosyada
+durur, koda serpilmez. İkinci kanal geldiğinde buraya bir satır eklenir.
 
-İkinci kanal geldiğinde buraya bir satır eklenir. Gerçekten neyin değiştiği
-o zaman görülür ve gerekiyorsa soyutlama o noktada çıkarılır — tahminle değil.
+⚠️ **Kanal ID'si burada YOK ve gerekmiyor.** `videos.insert` videoyu
+yetkilendirilmiş hesabın kanalına yüklüyor; hangi kanala gideceğini OAuth
+belirliyor, bu profil değil. Buradaki `kimlik` yalnızca bir CLI argümanı ve
+klasör adı. Yanlış kanala yükleme riski varsa çözümü buraya bir ID eklemek
+değil, doğru hesapla yetkilendirmektir.
+
+## Strateji geçmişi
+
+Bu dosya "önce çocuk kanalı, sonra eğitim" planına göre yazılmıştı. O plan iki
+kez değişti:
+
+- **2026-08-03** — çocuk (MFK) + eğitim ayrımı rafa kalktı; yerine format bazlı
+  iki kanal (uzun + Shorts) geldi.
+- **2026-08-05** — çocuk içeriği tamamen bırakıldı ve `cocuk` profili silindi.
+  Sadece rafa kaldırmak yetmezdi: profil CLI'da iki komutun **varsayılanıydı**,
+  yani argüman verilmeyen bir yükleme `selfDeclaredMadeForKids=True` ile
+  giderdi. Aşağıdaki alanın kendi uyarısı bunun bedelini yazıyor.
+
+⚠️ **Bugün kayıtlı tek kanal bir DENEME kanalı.** Üretim kanalları (uzun +
+Shorts) henüz açılmadı. `muezza` hattı uçtan uca sınamak için var: 1 abone,
+3 video. Buradaki sayılar ve strateji bir deneyin parametreleri, kanıtlanmış
+bir düzen değil — üretim kanalı açıldığında bu profil kopyalanmamalı, kendi
+ölçümüyle yeniden kurulmalı.
 """
 
 from dataclasses import dataclass, field
@@ -39,13 +59,19 @@ class Kanal:
             raise ValueError("kanal kimliği boş olamaz")
 
 
-# Kayıtlı kanallar. İkinci kanal (eğitim/tarih/bilim) v1 çalıştıktan sonra eklenir.
+# Kayıtlı kanallar. Üretim kanalları (uzun + Shorts) açıldığında buraya eklenir.
 KANALLAR: dict[str, Kanal] = {
-    "cocuk": Kanal(
-        kimlik="cocuk",
-        ad="Çocuk içeriği",
-        cocuk_icerigi=True,
-        varsayilan_etiketler=("çocuk", "çizgi film"),
+    "muezza": Kanal(
+        kimlik="muezza",
+        ad="muezza (deneme kanalı)",
+        # Kanalda çocuklara yönelik içerik yok. Bu alan `selfDeclaredMadeForKids`
+        # olarak gidiyor; yanlış işaretlemenin bedeli yukarıda yazılı.
+        cocuk_icerigi=False,
+        # İngilizce Shorts kanalı — MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`:
+        # 35-50 saniye, 80-120 İngilizce kelime. Varsayılan `tr` olsaydı her
+        # videoya yanlış `defaultLanguage` giderdi.
+        varsayilan_dil="en",
+        varsayilan_etiketler=("history", "shorts"),
     ),
 }
 

@@ -13,9 +13,14 @@ from yt_automation.video import (
     yayin_tarihini_utc,
 )
 
+# ⚠️ Bu testin kendi nesnesi, kayıtlı bir kanal DEĞİL. Çocuk içeriği ürün
+# kararı olarak bırakıldı (2026-08-05) ve `kanal.KANALLAR`'dan silindi; burada
+# durmasının sebebi `cocuk_icerigi=True` **alanının** hâlâ var olması ve o
+# yolun (bayrak yayılımı, kanal-video uyuşmazlığında hata) tek kapsaması bu
+# olması. Ürün kararıyla test kapsamı ayrı şeyler.
 COCUK = Kanal(
-    kimlik="cocuk",
-    ad="Çocuk içeriği",
+    kimlik="test-cocuk",
+    ad="Çocuk içeriği (test nesnesi)",
     cocuk_icerigi=True,
     varsayilan_etiketler=("çocuk", "çizgi film"),
 )
