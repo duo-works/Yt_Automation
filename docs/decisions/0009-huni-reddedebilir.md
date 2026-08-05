@@ -230,3 +230,40 @@ raporlanabilir bir sayı değil, geçici bir tahmindir.**
 
 Ölçüm hâlâ tamamlanmadı: 114 adayın 33'ü kırılımsız (günlük sondaj tavanı).
 Tamamlandığında bu bölüm son kez güncellenecek.
+
+#### Tam ölçüm — 2026-08-05, 114/114 aday · **kazanç sıfır**
+
+Geri doldurma bitti; altı dilin hepsinde iki formatın taban çizgisi dolu
+(en 18/19, es 22/22, de 26/27, tr 20/21, ar 17/17, hi 8/8 — shorts/uzun).
+
+| Örneklem | birleşik geçen | format geçen | kazanılan | elenen |
+|---|---|---|---|---|
+| 21 kalibre edilebilir | 4 | 5 | 1 | 0 |
+| 81 kalibre edilebilir | 4 | 5 | 2 | 1 |
+| **114 (tam)** | **2** | **2** | **0** | **0** |
+
+**Tam veride format kapısı ile birleşik kapı aynı iki adayı seçiyor.** Bu
+ADR'nin yukarıda yayımladığı ara sayılar (+1, sonra +2/−1) ince taban
+çizgisinden doğan **artefakt**tı. Bölüm kendi uyarısını taşıyordu —
+*"5 örneklemli bir tabandan okunan kalibre raporlanabilir bir sayı değil"* —
+ama sayı yine de sonuç olarak sunuldu. Tam veri o uyarıyı beklenenden sert
+doğruladı ve uyarı artık bu ADR'nin kendi geçmişiyle kanıtlı.
+
+**Bu, DW-58'i geçersiz kılmıyor — ölçtüğü şeyi düzeltiyor.** Kapı aynı adayları
+seçiyor ama artık **hangi rafta** yapılacaklarını söylüyor:
+
+| Aday | shorts | uzun | öneri |
+|---|---|---|---|
+| III. Murad (tr) | 1,17 | **2,47** | uzun |
+| Fritz Gerlich (es) | **2,08** | 1,88 | shorts |
+
+İki kanal ayrımının (uzun + Shorts) girdisi tam olarak bu ve DW-58 öncesinde
+**hiç yoktu**. Havuzun tamamında dağılım 66 uzun / 31 shorts; yani kapı bir
+formata yatmıyor. 21 adaylık örneklemde kurulan "geçenlerin üçü de Shorts"
+yönsel iddiası da böylece düşüyor.
+
+**Kalıcı ders — ölçüm bölümü olan ADR'ler için:** ara ölçüm yayımlamak, o
+ölçümün istikrarlı olduğunu iddia etmektir. Bu bölümde üç kez sayı yayımlandı
+ve ilk ikisi yanlıştı. Örneklem doymadan çıkan sayı kayıt altına alınacaksa
+**yanında hangi örneklemden geldiği ve neyle değişebileceği** yazılmalı;
+yoksa okuyan onu karar sanır.
