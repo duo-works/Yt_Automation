@@ -42,6 +42,7 @@ from .trend import (
 )
 from .video import MetadataHatasi, kuyrugu_oku
 from .yukleyici import (
+    YanlisKanalHatasi,
     YuklemeDogrulamaHatasi,
     kanali_dogrula,
     yukle_ve_dogrula,
@@ -832,6 +833,11 @@ def _yukle(dizin: Path, kanal_kimligi: str) -> int:
         MetadataHatasi,
         KotaAsimi,
         YuklemeDogrulamaHatasi,
+        # ⚠️ DW-83'te eklenirken bu listeye konmamıştı. Koruma doğru çalışıyordu
+        # ama kullanıcı ne yapacağını söyleyen mesajı ham yığın izinin içinde
+        # görüyordu. Ölçüldü (2026-08-05): token yeni bir kanala bağlandığında
+        # tam olarak bu yaşandı — mesaj doğruydu, sunumu değildi.
+        YanlisKanalHatasi,
         oauth.OAuthYapilandirmaHatasi,
     ) as hata:
         print(f"HATA: {hata}", file=sys.stderr)
@@ -851,7 +857,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Kuyruktaki metadata dosyalarını doğrula ve kota tahmini ver",
     )
     dogrula.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
-    dogrula.add_argument("--kanal", default="deneme", help="Kanal kimliği (varsayılan: deneme)")
+    dogrula.add_argument("--kanal", default="shemz", help="Kanal kimliği (varsayılan: shemz)")
 
     trend = altlar.add_parser("trend", help="Bölgesel trend listeleri")
     trend_altlar = trend.add_subparsers(dest="trend_komutu", required=True)
@@ -1028,7 +1034,7 @@ def main(argv: list[str] | None = None) -> int:
     kg.add_argument("--kuru", action="store_true", help="Hiç yazma, terim ve eşleşmeleri göster")
     yukle = altlar.add_parser("yukle", help="Kuyruktaki videoları yükle ve bayrakları doğrula")
     yukle.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
-    yukle.add_argument("--kanal", default="deneme", help="Kanal kimliği (varsayılan: deneme)")
+    yukle.add_argument("--kanal", default="shemz", help="Kanal kimliği (varsayılan: shemz)")
 
     # Köprünün tüketici ucu: video hattı adayı buradan alır ve durumunu
     # buradan ilerletir. Notion istemcisi yazmasına gerek yok — sözleşmenin
