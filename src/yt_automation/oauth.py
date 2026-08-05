@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -49,8 +50,21 @@ def _yol(ortam_degiskeni: str) -> Path:
 
 
 def _kaydet(kimlik_bilgisi: Credentials, token_yolu: Path) -> None:
-    token_yolu.parent.mkdir(parents=True, exist_ok=True)
+    """Token'ı **yalnızca sahibinin okuyabileceği** izinle yazar.
+
+    İçinde refresh token var: uzun ömürlü ve kanala yükleme yetkisi veren bir
+    kimlik bilgisi. Düz `write_text` dosyayı umask'e bırakıyordu ve ölçüldü —
+    bu makinede 0644 çıkıyor, yani makinedeki her kullanıcı okuyabiliyor.
+    `ssh` özel anahtarını 0644 bırakmakla aynı sınıf hata. Modül docstring'i
+    sırların repoya yazılmamasını söylüyor; aynı özen dosya iznine de gerekli.
+
+    ⚠️ `mkdir(mode=...)` yalnızca dizin **yeni oluşturulurken** etkili; var
+    olan bir dizinin iznini değiştirmiyor. Yeni kurulumlarda doğru olanı
+    yapıyor, eskiden kalan gevşek dizin izni elle düzeltilmeli.
+    """
+    token_yolu.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     token_yolu.write_text(kimlik_bilgisi.to_json(), encoding="utf-8")
+    token_yolu.chmod(0o600)
 
 
 def _yenile_veya_yetkilendir(client_secret_yolu: Path, token_yolu: Path) -> Credentials:
@@ -60,13 +74,33 @@ def _yenile_veya_yetkilendir(client_secret_yolu: Path, token_yolu: Path) -> Cred
     if token_yolu.is_file():
         kimlik_bilgisi = Credentials.from_authorized_user_file(str(token_yolu), KAPSAMLAR)
 
-    if kimlik_bilgisi and kimlik_bilgisi.valid:
+    # ⚠️ `Credentials.valid` KAPSAM KONTROL ETMİYOR — kaynağı yalnızca
+    # `token is not None and not expired` diyor. `has_scopes` ayrı bir metot.
+    # Bu ayrım olmadan `KAPSAMLAR`'a ileride bir kapsam eklendiğinde diskteki
+    # eski token geçerli görünmeye devam eder ve hata çalışma anında
+    # `403 insufficient scopes` olarak, çağrı yerinde patlar — sebebi
+    # anlaşılmayan bir yerde. Varsayımsal değil: DW-25 (Analytics) ayrı bir
+    # kapsam gerektiriyor ve PRD bunu zaten yazıyor.
+    if kimlik_bilgisi and kimlik_bilgisi.valid and kimlik_bilgisi.has_scopes(KAPSAMLAR):
         return kimlik_bilgisi
 
     if kimlik_bilgisi and kimlik_bilgisi.expired and kimlik_bilgisi.refresh_token:
-        kimlik_bilgisi.refresh(Request())
-        _kaydet(kimlik_bilgisi, token_yolu)
-        return kimlik_bilgisi
+        try:
+            kimlik_bilgisi.refresh(Request())
+        except RefreshError:
+            # İptal edilmiş ya da 7 günde dolmuş refresh token. Bu, modül
+            # docstring'inde uyarı olarak yazılı olan senaryonun ta kendisi:
+            # onay ekranı "Testing"teyken HER HAFTA buraya düşülür. Yakalanmazsa
+            # kütüphane traceback'i ile patlar ve "sessiz yenileme" iddiası
+            # tam da en sık karşılaşılan hâlde tutmaz.
+            #
+            # Bayat dosya siliniyor: bırakılırsa her koşumda önce okunup sonra
+            # aynı hataya düşülür ve dosyanın varlığı yanıltıcı kalır.
+            kimlik_bilgisi = None
+            token_yolu.unlink(missing_ok=True)
+        else:
+            _kaydet(kimlik_bilgisi, token_yolu)
+            return kimlik_bilgisi
 
     if not client_secret_yolu.is_file():
         raise OAuthYapilandirmaHatasi(
