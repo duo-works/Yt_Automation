@@ -684,3 +684,247 @@ def bosluklari_guncelle(
         sonuc.elendi += int(elendi)
 
     return sonuc
+
+
+# --- Tüketici tarafı: köprüden okuma ve durum ilerletme ------------------
+#
+# Buraya kadarki her şey **yazan** taraf. Aşağısı köprünün karşı ucu: video
+# hattının adayı alıp durumunu ilerletmesi (ADR-0011, ADR-0013).
+#
+# Neden `tablo_studio`'da değil de burada: ADR-0011 ölçüm alanlarını salt
+# okuma ilan ediyor. Tüketiciye dar bir operasyon verilirse o alanlara
+# **yazamaz** — PATCH gövdesini sözleşmenin sahibi kuruyor. Yazılı kural
+# böylece zorlanan kurala dönüşüyor. Şema eşlemesi de ("Shorts" → "shorts")
+# tek yerde kalıyor; `bosluklari_guncelle` bu ayrışmayı zaten uyarı olarak
+# yazmıştı.
+
+SECILDI_DURUMU = "Seçildi"
+URETILIYOR_DURUMU = "Üretiliyor"
+URETILDI_DURUMU = "Üretildi"
+
+# `bitir` iki durumdan da kabul ediyor: üretici `Üretiliyor` adımını
+# işaretlemiş de olabilir, doğrudan bitirmiş de. `Yeni` kabul edilmiyor —
+# kapılmamış bir adayı bitirmek, iki hattın aynı konuyu üretmesi demek.
+BITIRILEBILIR_DURUMLAR = (SECILDI_DURUMU, URETILIYOR_DURUMU)
+
+# Notion tek sayfada en fazla bunu döndürüyor.
+SAYFA_SINIRI = 100
+
+_FORMAT_ADI = {"shorts": "Shorts", "uzun": "Uzun"}
+
+
+@dataclass(frozen=True)
+class Aday:
+    """Köprüden geçen adayın tüketiciye görünen yüzü.
+
+    Ölçüm alanları burada **var ama salt okuma**: video hattı skoru görüp
+    karar verebilmeli, ama geri yazamamalı. Yazma yolu bu sınıftan hiç
+    beslenmiyor (`adayi_sec`/`adayi_bitir` gövdelerini elle kuruyor), yani
+    buraya alan eklemek yanlışlıkla yazma yetkisi vermiyor.
+    """
+
+    kimlik: str
+    baslik: str
+    sayfa_url: str
+    durum: str
+    onerilen_format: str | None = None
+    hedef_kanal: str | None = None
+    sinif: str | None = None
+    dil: str | None = None
+    bosluk_skoru: float | None = None
+    talep: float | None = None
+    baglanti: str | None = None
+
+    def sozluk(self) -> dict:
+        """`--json` çıktısının şeması — `tablo_studio`'nun tükettiği arayüz.
+
+        Alan adları bilinçle Notion'ınkilerden farklı: Notion sütunu yeniden
+        adlandırılırsa tüketici kırılmasın diye burada sabitleniyor.
+        """
+        return {
+            "kimlik": self.kimlik,
+            "baslik": self.baslik,
+            "sayfa_url": self.sayfa_url,
+            "durum": self.durum,
+            "onerilen_format": self.onerilen_format,
+            "hedef_kanal": self.hedef_kanal,
+            "sinif": self.sinif,
+            "dil": self.dil,
+            "bosluk_skoru": self.bosluk_skoru,
+            "talep": self.talep,
+            "baglanti": self.baglanti,
+        }
+
+
+def _select(ozellikler: dict, ad: str) -> str | None:
+    return ((ozellikler.get(ad) or {}).get("select") or {}).get("name")
+
+
+def _number(ozellikler: dict, ad: str) -> float | None:
+    return (ozellikler.get(ad) or {}).get("number")
+
+
+def _rich_text(ozellikler: dict, ad: str) -> str | None:
+    parcalar = (ozellikler.get(ad) or {}).get("rich_text") or []
+    metin = "".join(p.get("plain_text", "") for p in parcalar)
+    return metin or None
+
+
+def _adayi_coz(sayfa: dict) -> Aday:
+    ozellikler = sayfa.get("properties", {}) or {}
+    baslik_parcalari = (ozellikler.get("Başlık") or {}).get("title") or []
+    return Aday(
+        kimlik=sayfa["id"].replace("-", ""),
+        baslik="".join(p.get("plain_text", "") for p in baslik_parcalari),
+        sayfa_url=sayfa.get("url", ""),
+        durum=_select(ozellikler, "Durum") or "",
+        onerilen_format=_select(ozellikler, "Önerilen format"),
+        # ⚠️ `Hedef kanal` yalnızca kapının TAMAMINI geçen adayda dolu
+        # (`bosluk_ozellikleri`'ndeki gerekçeye bakın). Boş gelmesi
+        # "atanmamış" demek, "hata" değil — tüketici buna göre davranmalı.
+        hedef_kanal=_select(ozellikler, "Hedef kanal"),
+        sinif=_select(ozellikler, "Sınıf"),
+        dil=_rich_text(ozellikler, "Dil"),
+        bosluk_skoru=_number(ozellikler, "Boşluk skoru"),
+        talep=_number(ozellikler, "Talep (okunma)"),
+        baglanti=(ozellikler.get("Bağlantı") or {}).get("url"),
+    )
+
+
+def adaylari_getir(
+    *,
+    token: str,
+    durum: str = DOKUNULMAMIS_DURUM,
+    format_adi: str | None = None,
+    adet: int = VARSAYILAN_ADET,
+) -> list[Aday]:
+    """Notion'daki adayları durum ve formata göre, en iyi skordan başlayarak.
+
+    Bu, modüldeki **tek** okuma yolu ve bilinçli olarak dar: `aktarilmamis_*`
+    fonksiyonları yerel SQLite'tan okuyor (kotasız), burası ise Notion'ın
+    kendisinden — çünkü `Durum` yalnızca orada yaşıyor ve gerçeğin kaynağı o.
+
+    Okuma kotalı olduğu için tek çağrı, sayfalama yok: `adet` zaten 20
+    civarında ve Notion tek sayfada 100'e kadar veriyor.
+    """
+    govde: dict = {
+        "filter": {"property": "Durum", "select": {"equals": durum}},
+        # Skor `None` olabiliyor (ölçülmemiş aday). Notion boşları sona
+        # koyuyor, yani ölçülmüş adaylar doğal olarak öne geliyor.
+        "sorts": [{"property": "Boşluk skoru", "direction": "descending"}],
+        "page_size": max(1, min(adet, SAYFA_SINIRI)),
+    }
+    if format_adi:
+        ad = _FORMAT_ADI.get(format_adi.lower())
+        if ad is None:
+            raise NotionHatasi(
+                f"bilinmeyen format: {format_adi!r} — beklenen: {', '.join(sorted(_FORMAT_ADI))}"
+            )
+        govde["filter"] = {
+            "and": [
+                govde["filter"],
+                {"property": "Önerilen format", "select": {"equals": ad}},
+            ]
+        }
+
+    yanit = _istek(f"/databases/{database_al()}/query", govde, token)
+    return [_adayi_coz(s) for s in yanit.get("results", [])][:adet]
+
+
+def _durumu_ilerlet(
+    kimlik: str,
+    *,
+    token: str,
+    beklenen: tuple[str, ...],
+    ozellikler: dict,
+    kuru: bool = False,
+    bekleme: float = BEKLEME_SN,
+) -> Aday:
+    """İki yazma yolunun ortak gövdesi — korumalar tek yerde.
+
+    İkisini ayrı ayrı yazmak, korumalardan birinin bir yolda unutulması
+    demekti. Aşağıdaki iki kontrol de bu repoda **ölçülerek** öğrenildi:
+
+    1. **Çöp kontrolü.** Çöpe atılmış sayfaya PATCH atmak başarılı dönüyor ve
+       hiçbir yerde görünmüyor. 2026-08-04'te mükerrer bir sayfa elle silinmiş,
+       defter silineni gösteriyordu ve görünen sayfa bir daha güncellenmezdi.
+
+    2. **Beklenen durum kontrolü.** Yalnızca beklenen durumdan ilerletiliyor.
+       Bu tek kontrol iki ayrı şeyi birden koruyor: iki tüketicinin aynı adayı
+       kapması (yarış) ve insanın verdiği kararın ezilmesi — `bosluklari_guncelle`
+       aynı gerekçeyle `DOKUNULMAMIS_DURUM` şartını taşıyor.
+    """
+    mevcut = _istek(f"/pages/{kimlik}", None, token, yontem="GET")
+
+    if mevcut.get("in_trash") or mevcut.get("archived"):
+        raise NotionHatasi(
+            f"{kimlik}: sayfa çöpte. PATCH başarılı dönerdi ama hiçbir yerde "
+            "görünmezdi — bilerek durduruldu."
+        )
+
+    aday = _adayi_coz(mevcut)
+    if aday.durum not in beklenen:
+        raise NotionHatasi(
+            f"{aday.baslik or kimlik}: durum {aday.durum!r}, beklenen "
+            f"{' veya '.join(repr(d) for d in beklenen)}. "
+            "Başkası kapmış ya da insan elle değiştirmiş olabilir; "
+            "ezmek yerine durduruldu."
+        )
+
+    if kuru:
+        return aday
+
+    _istek(f"/pages/{kimlik}", {"properties": ozellikler}, token, yontem="PATCH")
+    time.sleep(bekleme)
+    return aday
+
+
+def adayi_sec(kimlik: str, *, token: str, kuru: bool = False) -> Aday:
+    """`Yeni` → `Seçildi`. Adayı video hattı için kapatır.
+
+    Gövdede **yalnızca** `Durum` var. Ölçüm alanlarına (`Hız`, `İvme`,
+    `Boşluk skoru`, `Talep`, `Arz`, `Kaynak sayısı`, `Sınıf`) dokunulmuyor —
+    ADR-0011'in salt-okuma sütunu burada kodla zorlanıyor.
+    """
+    return _durumu_ilerlet(
+        kimlik,
+        token=token,
+        beklenen=(DOKUNULMAMIS_DURUM,),
+        ozellikler={"Durum": {"select": {"name": SECILDI_DURUMU}}},
+        kuru=kuru,
+    )
+
+
+def adayi_bitir(
+    kimlik: str,
+    *,
+    token: str,
+    video_url: str,
+    uretim_notu: str | None = None,
+    kuru: bool = False,
+) -> Aday:
+    """`Seçildi`/`Üretiliyor` → `Üretildi`, video bağlantısıyla birlikte.
+
+    `video_url` zorunlu ve bu bilinçli: bağlantısız bir `Üretildi` köprünün
+    geri dönüş yolunu koparıyor — trend hattı adayı tükenmiş sayıyor ama
+    çıktının nereye gittiği hiçbir yerde yazmıyor.
+    """
+    if not video_url.strip():
+        raise NotionHatasi(
+            "video_url boş olamaz: bağlantısız 'Üretildi' köprünün geri dönüş yolunu koparır."
+        )
+
+    ozellikler: dict = {
+        "Durum": {"select": {"name": URETILDI_DURUMU}},
+        "Video URL": {"url": video_url.strip()},
+    }
+    if uretim_notu:
+        ozellikler["Üretim notu"] = _metin(uretim_notu)
+
+    return _durumu_ilerlet(
+        kimlik,
+        token=token,
+        beklenen=BITIRILEBILIR_DURUMLAR,
+        ozellikler=ozellikler,
+        kuru=kuru,
+    )

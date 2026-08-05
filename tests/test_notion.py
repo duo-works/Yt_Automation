@@ -709,3 +709,247 @@ def test_copteki_sayfa_guncellenmez(yol: Path, wiki_aday, pazar, monkeypatch):
     assert sonuc.copte > 0
     assert sonuc.guncellenen == 0
     assert not [y for y, _, _ in sahte.cagrilar if y == "PATCH"], "çöpteki sayfaya yazılmamalı"
+
+
+# --- Köprünün tüketici ucu (DW-80, ADR-0013) -----------------------------
+#
+# Kendi test ikizini kullanıyor, `SahteNotion`'ı genişletmiyor. Sebep: oradaki
+# ikiz **yazma** yoluna göre şekillenmiş ve GET'te yalnızca `Durum` döndürüyor.
+# Tüketici tarafı sayfanın tamamını (id, url, özellikler) okuyor; ikizi ikisine
+# birden uydurmak, yirmi mevcut testin dayandığı davranışı da riske atardı.
+
+SAYFA_KIMLIGI = "3b29bfc93b2e814d9886de876f5b3da4"
+
+
+def _sahte_sayfa(
+    *,
+    kimlik: str = SAYFA_KIMLIGI,
+    durum: str = "Yeni",
+    baslik: str = "Fritz Gerlich",
+    format_adi: str = "Shorts",
+    skor: float | None = 0.32,
+    copte: bool = False,
+) -> dict:
+    return {
+        "id": kimlik,
+        "url": f"https://app.notion.com/p/Baslik-{kimlik}",
+        "in_trash": copte,
+        "archived": copte,
+        "properties": {
+            "Başlık": {"title": [{"plain_text": baslik}]},
+            "Durum": {"select": {"name": durum}},
+            "Önerilen format": {"select": {"name": format_adi}},
+            "Hedef kanal": {"select": {"name": "Shorts kanal"}},
+            "Sınıf": {"select": {"name": "tarih"}},
+            "Dil": {"rich_text": [{"plain_text": "es"}]},
+            "Boşluk skoru": {"number": skor},
+            "Talep (okunma)": {"number": 7132},
+            "Bağlantı": {"url": "https://es.wikipedia.org/wiki/Fritz_Gerlich"},
+        },
+    }
+
+
+class SahteKopru:
+    """Tüketici yolunun `notion._istek` ikizi — çağrıları biriktirir."""
+
+    def __init__(self, *, sayfa: dict | None = None, sonuclar: list[dict] | None = None):
+        self.sayfa = sayfa if sayfa is not None else _sahte_sayfa()
+        self.sonuclar = sonuclar if sonuclar is not None else [_sahte_sayfa()]
+        self.cagrilar: list[tuple[str, str, dict | None]] = []
+
+    def __call__(self, yol: str, govde: dict | None, token: str, *, yontem: str = "POST") -> dict:
+        self.cagrilar.append((yontem, yol, govde))
+        if yontem == "GET":
+            return self.sayfa
+        if yol.endswith("/query"):
+            return {"results": self.sonuclar}
+        return self.sayfa
+
+    @property
+    def patchler(self) -> list[dict]:
+        return [g for y, _, g in self.cagrilar if y == "PATCH" and g]
+
+
+@pytest.fixture
+def kopru(monkeypatch):
+    monkeypatch.setenv(notion.TOKEN_DEGISKENI, "t")
+    monkeypatch.setenv(notion.DATABASE_DEGISKENI, "db")
+
+    def kur(**kwargs):
+        sahte = SahteKopru(**kwargs)
+        monkeypatch.setattr(notion, "_istek", sahte)
+        monkeypatch.setattr(notion.time, "sleep", lambda _: None)
+        return sahte
+
+    return kur
+
+
+def test_adaylari_getir_durum_suzuyor_ve_skora_gore_siraliyor(kopru):
+    sahte = kopru()
+    notion.adaylari_getir(token="t")
+
+    _, yol, govde = sahte.cagrilar[0]
+    assert yol.endswith("/query")
+    assert govde["filter"] == {"property": "Durum", "select": {"equals": "Yeni"}}
+    assert govde["sorts"] == [{"property": "Boşluk skoru", "direction": "descending"}]
+
+
+def test_adaylari_getir_format_suzgeci_ekliyor(kopru):
+    sahte = kopru()
+    notion.adaylari_getir(token="t", format_adi="shorts")
+
+    filtre = sahte.cagrilar[0][2]["filter"]
+    assert filtre["and"][1] == {"property": "Önerilen format", "select": {"equals": "Shorts"}}
+
+
+def test_bilinmeyen_format_erken_hata(kopru):
+    kopru()
+    with pytest.raises(notion.NotionHatasi, match="bilinmeyen format"):
+        notion.adaylari_getir(token="t", format_adi="dikey")
+
+
+def test_adaylari_getir_alanlari_cozuyor(kopru):
+    kopru()
+    (aday,) = notion.adaylari_getir(token="t")
+
+    assert aday.kimlik == SAYFA_KIMLIGI
+    assert aday.baslik == "Fritz Gerlich"
+    assert aday.durum == "Yeni"
+    assert aday.onerilen_format == "Shorts"
+    assert aday.bosluk_skoru == 0.32
+    assert aday.sozluk()["baglanti"].endswith("Fritz_Gerlich")
+
+
+def test_sec_yalnizca_durum_yaziyor(kopru):
+    """ADR-0011'in salt-okuma sütunu kodla zorlanıyor.
+
+    Bu testin asıl işi bir alanın varlığını değil, **yokluğunu** sınamak:
+    ölçüm alanlarından biri gövdeye sızarsa video hattı trend hattının
+    ölçümünü ezebilir hale gelir ve bunu kimse fark etmez.
+    """
+    sahte = kopru()
+    notion.adayi_sec(SAYFA_KIMLIGI, token="t")
+
+    (govde,) = sahte.patchler
+    assert govde["properties"] == {"Durum": {"select": {"name": "Seçildi"}}}
+    for olcum_alani in ("Hız", "İvme", "Boşluk skoru", "Talep (okunma)", "Arz", "Sınıf"):
+        assert olcum_alani not in govde["properties"]
+
+
+@pytest.mark.parametrize("durum", ["Seçildi", "Üretildi", "Elendi", "İnceleniyor"])
+def test_sec_beklenmeyen_durumda_yazmiyor(kopru, durum):
+    """Çift-kapma yarışı ve insan kararı aynı kontrolle korunuyor."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum=durum))
+
+    with pytest.raises(notion.NotionHatasi, match="ezmek yerine durduruldu"):
+        notion.adayi_sec(SAYFA_KIMLIGI, token="t")
+
+    assert not sahte.patchler, "beklenmeyen durumda PATCH atılmamalı"
+
+
+def test_copteki_sayfaya_yazilmiyor(kopru):
+    """PATCH başarılı döner ve hiçbir yerde görünmez — 2026-08-04'te ölçüldü."""
+    sahte = kopru(sayfa=_sahte_sayfa(copte=True))
+
+    with pytest.raises(notion.NotionHatasi, match="çöpte"):
+        notion.adayi_sec(SAYFA_KIMLIGI, token="t")
+
+    assert not sahte.patchler
+
+
+def test_kuru_kosum_hic_patch_atmiyor(kopru):
+    sahte = kopru()
+    aday = notion.adayi_sec(SAYFA_KIMLIGI, token="t", kuru=True)
+
+    assert aday.durum == "Yeni"
+    assert not sahte.patchler
+    assert [y for y, _, _ in sahte.cagrilar] == ["GET"]
+
+
+def test_bitir_durum_video_ve_notu_yaziyor(kopru):
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+    notion.adayi_bitir(
+        SAYFA_KIMLIGI, token="t", video_url="https://youtu.be/abc", uretim_notu="ilk tur"
+    )
+
+    (govde,) = sahte.patchler
+    ozellikler = govde["properties"]
+    assert ozellikler["Durum"] == {"select": {"name": "Üretildi"}}
+    assert ozellikler["Video URL"] == {"url": "https://youtu.be/abc"}
+    assert "ilk tur" in ozellikler["Üretim notu"]["rich_text"][0]["text"]["content"]
+    assert set(ozellikler) == {"Durum", "Video URL", "Üretim notu"}
+
+
+@pytest.mark.parametrize("durum", ["Seçildi", "Üretiliyor"])
+def test_bitir_iki_durumdan_da_kabul_ediyor(kopru, durum):
+    """Üretici `Üretiliyor` adımını işaretlemiş de olabilir, atlamış da."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum=durum))
+    notion.adayi_bitir(SAYFA_KIMLIGI, token="t", video_url="https://youtu.be/abc")
+
+    assert len(sahte.patchler) == 1
+
+
+def test_bitir_kapilmamis_adayi_reddediyor(kopru):
+    """`Yeni` → `Üretildi` atlaması iki hattın aynı konuyu üretmesi demek."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Yeni"))
+
+    with pytest.raises(notion.NotionHatasi):
+        notion.adayi_bitir(SAYFA_KIMLIGI, token="t", video_url="https://youtu.be/abc")
+
+    assert not sahte.patchler
+
+
+def test_bitir_bos_video_url_reddediyor(kopru):
+    """Bağlantısız `Üretildi` köprünün geri dönüş yolunu koparır."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+
+    with pytest.raises(notion.NotionHatasi, match="video_url boş"):
+        notion.adayi_bitir(SAYFA_KIMLIGI, token="t", video_url="   ")
+
+    assert not sahte.cagrilar, "doğrulama ağ çağrısından ÖNCE olmalı"
+
+
+def test_cli_json_cikti_semasi(kopru, capsys):
+    kopru()
+    assert cli.main(["aday", "listele", "--json"]) == 0
+
+    kayitlar = json.loads(capsys.readouterr().out)
+    assert [k["kimlik"] for k in kayitlar] == [SAYFA_KIMLIGI]
+    assert set(kayitlar[0]) == {
+        "kimlik",
+        "baslik",
+        "sayfa_url",
+        "durum",
+        "onerilen_format",
+        "hedef_kanal",
+        "sinif",
+        "dil",
+        "bosluk_skoru",
+        "talep",
+        "baglanti",
+    }
+
+
+def test_cli_aday_yoksa_sifirdan_farkli_donuyor(kopru, capsys):
+    """`gunluk-huni.sh` çıkış koduna bakıyor; boş liste sessiz başarı olmamalı."""
+    kopru(sonuclar=[])
+    assert cli.main(["aday", "listele"]) == 1
+    assert "aday yok" in capsys.readouterr().out
+
+
+def test_cli_url_ve_ciplak_kimlik_ayni_sayfaya_gidiyor(kopru):
+    for hedef in (
+        f"https://app.notion.com/p/Fritz-Gerlich-{SAYFA_KIMLIGI}",
+        SAYFA_KIMLIGI,
+        "3b29bfc9-3b2e-814d-9886-de876f5b3da4",
+    ):
+        sahte = kopru()
+        assert cli.main(["aday", "sec", hedef]) == 0
+        assert sahte.cagrilar[0][1] == f"/pages/{SAYFA_KIMLIGI}"
+
+
+def test_cli_bozuk_kimlikte_ag_cagrisi_yapmiyor(kopru, capsys):
+    sahte = kopru()
+    assert cli.main(["aday", "sec", "bu-bir-kimlik-degil"]) == 1
+    assert not sahte.cagrilar
+    assert "sayfa kimliği okunamadı" in capsys.readouterr().err
