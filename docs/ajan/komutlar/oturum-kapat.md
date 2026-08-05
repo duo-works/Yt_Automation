@@ -33,6 +33,26 @@ Notion `📓 Oturum Kaydı`'nda bu oturumda açtığın kayıt. Bulamıyorsan **
 
 PR açıldıysa `GitHub PR` alanını doldur. Notion görevinin de `In review` durumunda ve PR linkinin ona da işlenmiş olduğunu doğrula.
 
-## 5. Raporla
+## 5. Zamanlanmış hattı ilgilendiriyor mu
+
+**Merge canlıya çıkmak demek değil.** Zamanlanmış trend otomasyonu ayrı bir
+worktree'den, sabit bir ref'e iğnelenmiş olarak koşuyor (ADR-0008) ve o iğne
+yalnızca elle taşınıyor:
+
+```bash
+scripts/zamanlama-kur.sh durum              # canlı hangi ref'te
+scripts/zamanlama-kur.sh tazele --ref <ref> # iğneyi taşı
+```
+
+Değişiklik `src/yt_automation/` ya da `scripts/` altındaysa sor: canlının bu
+kodu koşması gerekiyor mu? Gerekiyorsa tazelendi mi? Cevap ne olursa olsun
+kaydın `## Ne yapıldı` bölümüne yaz — "merge edildi ama canlı hâlâ eski ref'te"
+bilinmesi gereken bir durumdur, eksikliği değil.
+
+Ölçüldü (2026-08-04): yedi PR'lık iş yazıldı, testleri geçti, merge edildi —
+ve canlı otomasyon günlerce eski ref'ten koştuğu için hiçbiri çalışmadı. Kodun
+yazılmış olmasıyla koşuyor olması karıştırıldı.
+
+## 6. Raporla
 
 Kullanıcıya kaydın kapandığını ve sıradaki adımın ne yazıldığını söyle.

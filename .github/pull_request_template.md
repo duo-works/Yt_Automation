@@ -24,4 +24,4 @@ Link: <!-- Notion görev linkini yapıştırın -->
 - [ ] Yeni ortam değişkeni varsa `.env.example` güncellendi
 - [ ] Kalıcı bir mimari karar alındıysa `docs/decisions/` altına ADR eklendi
 - [ ] Değişim tek bir görevin kapsamında (kapsam kayması yok)
-- [ ] Değişim yaklaşık 400 satır hedefinde; aşıyorsa **Neden** bölümünde bölmeme gerekçesi ve review planı yazıldı
+- [ ] Değişim yaklaşık 1.200 satır hedefinde; aşıyorsa **Neden** bölümünde bölmeme gerekçesi ve review planı yazıldı

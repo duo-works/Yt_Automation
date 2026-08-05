@@ -35,20 +35,31 @@ basarisiz=0
 GENIS_NOBET="$GUNLUK_DIZIN/.genis-$(date +%Y-%m-%d)"
 if [ ! -f "$GENIS_NOBET" ]; then
     kaydet "geniş tarama başlıyor"
-    if "$PY" -m yt_automation.cli trend topla --genis >> "$GUNLUK" 2>&1; then
+    cikti="$("$PY" -m yt_automation.cli trend topla --genis 2>&1)"; kod=$?
+    printf '%s\n' "$cikti" >> "$GUNLUK"
+    if [ "$kod" = "0" ]; then
         touch "$GENIS_NOBET"
         kaydet "geniş tarama tamam"
+    elif kota_tavani_mi "$cikti"; then
+        # ⚠️ Nöbet damgası BİLEREK konmuyor: tarama gerçekten yapılmadı, yani
+        # bugünün geniş taraması hâlâ borçlu. Kota dönünce bir sonraki saat
+        # yeniden denensin. Hata saymamak "yapıldı saymak" demek değil.
+        kaydet "geniş tarama — günlük kota tavanı doldu (bütçe hâli, hata değil)"
     else
-        kaydet "HATA: geniş tarama başarısız (çıkış $?)"
+        kaydet "HATA: geniş tarama başarısız (çıkış $kod)"
         basarisiz=1
     fi
 fi
 
 kaydet "derin tarama başlıyor"
-if "$PY" -m yt_automation.cli trend topla --derin >> "$GUNLUK" 2>&1; then
+cikti="$("$PY" -m yt_automation.cli trend topla --derin 2>&1)"; kod=$?
+printf '%s\n' "$cikti" >> "$GUNLUK"
+if [ "$kod" = "0" ]; then
     kaydet "derin tarama tamam"
+elif kota_tavani_mi "$cikti"; then
+    kaydet "derin tarama — günlük kota tavanı doldu (bütçe hâli, hata değil)"
 else
-    kaydet "HATA: derin tarama başarısız (çıkış $?)"
+    kaydet "HATA: derin tarama başarısız (çıkış $kod)"
     basarisiz=1
 fi
 

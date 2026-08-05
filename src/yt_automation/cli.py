@@ -16,6 +16,7 @@ bilerek eklenmedi; değerleri kabuğa siz aktarın:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from datetime import date
@@ -688,6 +689,91 @@ def _konu_kaynak(*, limit: int, json_cikti: bool, yenile: bool) -> int:
     return 0
 
 
+# --- Köprünün tüketici ucu (ADR-0011, ADR-0013) -------------------------
+
+
+def _aday_kimligi(hedef: str) -> str:
+    """Notion sayfa URL'i ya da çıplak kimlik — ikisini de kabul eder.
+
+    `tablo_studio` `--json` çıktısındaki `kimlik` alanını doğrudan geri
+    verecek; insan ise tarayıcıdan URL kopyalayacak. İkisini ayrı komutlara
+    bölmek, arayüzü kullananın hangi biçimi elinde tuttuğuna göre
+    dallanmasını isterdi.
+    """
+    ham = hedef.strip()
+    if kimlik := notion.sayfa_kimligi(ham):
+        return kimlik
+    sade = ham.replace("-", "")
+    if len(sade) == 32 and all(c in "0123456789abcdef" for c in sade.lower()):
+        return sade
+    raise notion.NotionHatasi(
+        f"sayfa kimliği okunamadı: {hedef!r}. Notion sayfa URL'i ya da 32 haneli "
+        "kimlik bekleniyor — uydurulmuş bir kimliğe yazmak başka sayfayı bozardı."
+    )
+
+
+def _aday_listele(*, format_adi: str | None, limit: int, json_cikti: bool) -> int:
+    adaylar = notion.adaylari_getir(token=notion.token_al(), format_adi=format_adi, adet=limit)
+    if json_cikti:
+        print(json.dumps([a.sozluk() for a in adaylar], ensure_ascii=False, indent=2))
+        return 0 if adaylar else 1
+
+    if not adaylar:
+        print(
+            f"`{notion.DOKUNULMAMIS_DURUM}` durumunda aday yok"
+            + (f" ({format_adi} formatında)" if format_adi else "")
+            + ".\nHuni boş geçmiş ya da tümü kapılardan elenmiş olabilir: "
+            "`ytoto bosluk rapor` ile bakın."
+        )
+        return 1
+
+    print(f"{len(adaylar)} aday · `{notion.DOKUNULMAMIS_DURUM}` · boşluk skoruna göre\n")
+    for aday in adaylar:
+        skor = "  —  " if aday.bosluk_skoru is None else f"{aday.bosluk_skoru:6.2f}"
+        # Hedef kanal boşsa aday kapının TAMAMINI geçmemiş demek — atanmamış
+        # olması hata değil, ama üretime alınırken bilinmeli.
+        kanal = aday.hedef_kanal or "atanmamış"
+        print(f"  {skor}  {str(aday.onerilen_format or '?'):9} {kanal:13} {aday.baslik[:44]}")
+        print(f"          {aday.sayfa_url}")
+    print(
+        "\nℹ️ Kapmak için: ytoto aday sec <url>  ·  bitirince: ytoto aday bitir <url> "
+        "--video-url <link>",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _aday_sec(*, hedef: str, kuru: bool) -> int:
+    aday = notion.adayi_sec(_aday_kimligi(hedef), token=notion.token_al(), kuru=kuru)
+    if kuru:
+        print(
+            f"[kuru] {aday.baslik} · {aday.durum} → {notion.SECILDI_DURUMU}\n"
+            "       Hiçbir şey yazılmadı."
+        )
+        return 0
+    print(f"✅ {aday.baslik} → {notion.SECILDI_DURUMU}\n   {aday.sayfa_url}")
+    return 0
+
+
+def _aday_bitir(*, hedef: str, video_url: str, uretim_notu: str | None, kuru: bool) -> int:
+    aday = notion.adayi_bitir(
+        _aday_kimligi(hedef),
+        token=notion.token_al(),
+        video_url=video_url,
+        uretim_notu=uretim_notu,
+        kuru=kuru,
+    )
+    if kuru:
+        print(
+            f"[kuru] {aday.baslik} · {aday.durum} → {notion.URETILDI_DURUMU}\n"
+            f"       Video URL: {video_url}\n"
+            "       Hiçbir şey yazılmadı."
+        )
+        return 0
+    print(f"✅ {aday.baslik} → {notion.URETILDI_DURUMU}\n   {video_url}")
+    return 0
+
+
 def _yukle(dizin: Path, kanal_kimligi: str) -> int:
     try:
         profil = kanal.getir(kanal_kimligi)
@@ -896,6 +982,35 @@ def main(argv: list[str] | None = None) -> int:
     yukle.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
     yukle.add_argument("--kanal", default="cocuk", help="Kanal kimliği (varsayılan: cocuk)")
 
+    # Köprünün tüketici ucu: video hattı adayı buradan alır ve durumunu
+    # buradan ilerletir. Notion istemcisi yazmasına gerek yok — sözleşmenin
+    # sahibi dar bir operasyon veriyor (ADR-0013).
+    aday_ay = altlar.add_parser("aday", help="Trend Adayları köprüsü — video hattının arayüzü")
+    aday_altlar = aday_ay.add_subparsers(dest="aday_komutu", required=True)
+
+    al = aday_altlar.add_parser(
+        "listele", help=f"`{notion.DOKUNULMAMIS_DURUM}` adayları skora göre sırala"
+    )
+    al.add_argument(
+        "--format", dest="format_adi", choices=("shorts", "uzun"), help="Yalnızca bu format"
+    )
+    al.add_argument("--limit", type=int, default=notion.VARSAYILAN_ADET)
+    al.add_argument("--json", dest="json_cikti", action="store_true", help="Makine okunur çıktı")
+
+    asec = aday_altlar.add_parser(
+        "sec", help=f"Adayı kap: {notion.DOKUNULMAMIS_DURUM} → {notion.SECILDI_DURUMU}"
+    )
+    asec.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
+    asec.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
+
+    abitir = aday_altlar.add_parser(
+        "bitir", help=f"Üretim bitti: → {notion.URETILDI_DURUMU} + Video URL"
+    )
+    abitir.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
+    abitir.add_argument("--video-url", required=True, help="Yayımlanan videonun bağlantısı")
+    abitir.add_argument("--not", dest="uretim_notu", help="`Üretim notu` alanına yazılır")
+    abitir.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
+
     args = ayristirici.parse_args(argv)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
@@ -944,6 +1059,28 @@ def main(argv: list[str] | None = None) -> int:
             return _konu_kaynak(limit=args.limit, json_cikti=args.json, yenile=args.yenile)
         if args.konu_komutu == "gtrends":
             return _konu_gtrends(kuru=args.kuru)
+    if args.komut == "aday":
+        # ⚠️ `NotionHatasi` burada yakalanıyor, çağrı yerlerinde değil: üç
+        # komutun üçü de aynı sınıftan hata veriyor (erişim, çöp sayfa,
+        # beklenmeyen durum) ve traceback basmak operatöre hiçbir şey
+        # anlatmıyor. Mesajlar zaten ne yapılacağını söyleyecek şekilde yazıldı.
+        try:
+            if args.aday_komutu == "listele":
+                return _aday_listele(
+                    format_adi=args.format_adi, limit=args.limit, json_cikti=args.json_cikti
+                )
+            if args.aday_komutu == "sec":
+                return _aday_sec(hedef=args.hedef, kuru=args.kuru)
+            if args.aday_komutu == "bitir":
+                return _aday_bitir(
+                    hedef=args.hedef,
+                    video_url=args.video_url,
+                    uretim_notu=args.uretim_notu,
+                    kuru=args.kuru,
+                )
+        except notion.NotionHatasi as hata:
+            print(f"HATA: {hata}", file=sys.stderr)
+            return 1
     if args.komut == "yukle":
         return _yukle(args.dizin, args.kanal)
     return 1
