@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -10,6 +10,7 @@ from yt_automation.video import (
     MetadataHatasi,
     kuyrugu_oku,
     oku,
+    yayin_tarihini_utc,
 )
 
 COCUK = Kanal(
@@ -127,6 +128,19 @@ def test_bozuk_tarih_anlasilir_hata_verir(tmp_path: Path):
     yol = yaz(tmp_path, "bolum-01", 'baslik: X\nyayin_tarihi: "yarın"\n')
     with pytest.raises(MetadataHatasi, match="yayin_tarihi:"):
         oku(yol, COCUK)
+
+
+def test_naive_yayin_tarihi_istanbul_sayilip_utcye_cevrilir():
+    assert yayin_tarihini_utc(datetime(2026, 8, 1, 18, 0)) == datetime(
+        2026, 8, 1, 15, 0, tzinfo=UTC
+    )
+
+
+def test_offsetli_yayin_tarihi_offseti_koruyarak_utcye_cevrilir():
+    arti_bes = timezone(timedelta(hours=5))
+    assert yayin_tarihini_utc(datetime(2026, 8, 1, 18, 0, tzinfo=arti_bes)) == datetime(
+        2026, 8, 1, 13, 0, tzinfo=UTC
+    )
 
 
 def test_kuyruk_dosya_adina_gore_siralanir(tmp_path: Path):

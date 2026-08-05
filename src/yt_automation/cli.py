@@ -22,7 +22,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import __version__, depo, kanal, kota
+from . import __version__, depo, kanal, kota, oauth
+from .kota import KotaAsimi
 from .trend import (
     bolge,
     bosluk,
@@ -40,6 +41,7 @@ from .trend import (
     wikipedia,
 )
 from .video import MetadataHatasi, kuyrugu_oku
+from .yukleyici import YuklemeDogrulamaHatasi, yukle_ve_dogrula
 
 ANAHTAR_DEGISKENI = "YOUTUBE_API_KEY"
 
@@ -772,6 +774,39 @@ def _aday_bitir(*, hedef: str, video_url: str, uretim_notu: str | None, kuru: bo
     return 0
 
 
+def _yukle(dizin: Path, kanal_kimligi: str) -> int:
+    try:
+        profil = kanal.getir(kanal_kimligi)
+        kuyruk = kuyrugu_oku(dizin, profil)
+        servis = oauth.servis_olustur()
+        # ⚠️ `KaliciSayac`, `Sayac` DEĞİL. Bu hat projenin en büyük kota
+        # tüketicisi (video başına 1.651 birim, günlük bütçenin altıda biri) ve
+        # bellekteki sayaç her çalıştırmada sıfırdan başlayıp diğer süreçleri
+        # görmüyordu. Trend, boşluk ve niş hatlarının üçü de deftere yazarken
+        # yalnızca bu yazmıyordu.
+        #
+        # Somut sonuç: gün içinde 897 birim harcanmışken bellekteki sayaç
+        # 10.000 kalan görür, altı videoya izin verir, bütçe beşe yeter ve
+        # altıncı `videos.insert` 1.600 birim harcayıp 403 alır — reddedilen
+        # istek de kotadan yediği için bedel iki kez ödenir. DW-24 tam bunun
+        # için yazıldı.
+        sayac = kota.KaliciSayac(depo.varsayilan_yol(), surec="yukleme")
+        for video in kuyruk:
+            video_id = yukle_ve_dogrula(
+                video,
+                profil,
+                servis,
+                sayac,
+                uyar=lambda mesaj: print(f"⚠️ {mesaj}", file=sys.stderr),
+            )
+            print(f"Yüklendi ve doğrulandı: {video.baslik} — {video_id}")
+        print(f"Kota: {sayac.ozet()}")
+        return 0
+    except (KeyError, MetadataHatasi, KotaAsimi, YuklemeDogrulamaHatasi) as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ayristirici = argparse.ArgumentParser(
         prog="ytoto",
@@ -960,6 +995,9 @@ def main(argv: list[str] | None = None) -> int:
         "gtrends", help="Google Trends RSS'inden gün-içi konu keşfi (kota harcamaz)"
     )
     kg.add_argument("--kuru", action="store_true", help="Hiç yazma, terim ve eşleşmeleri göster")
+    yukle = altlar.add_parser("yukle", help="Kuyruktaki videoları yükle ve bayrakları doğrula")
+    yukle.add_argument("dizin", type=Path, help="Video ve metadata dosyalarının bulunduğu dizin")
+    yukle.add_argument("--kanal", default="cocuk", help="Kanal kimliği (varsayılan: cocuk)")
 
     # Köprünün tüketici ucu: video hattı adayı buradan alır ve durumunu
     # buradan ilerletir. Notion istemcisi yazmasına gerek yok — sözleşmenin
@@ -1060,6 +1098,8 @@ def main(argv: list[str] | None = None) -> int:
         except notion.NotionHatasi as hata:
             print(f"HATA: {hata}", file=sys.stderr)
             return 1
+    if args.komut == "yukle":
+        return _yukle(args.dizin, args.kanal)
     return 1
 
 
