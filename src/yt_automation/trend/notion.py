@@ -895,6 +895,36 @@ def adayi_sec(kimlik: str, *, token: str, kuru: bool = False) -> Aday:
     )
 
 
+def adayi_basla(kimlik: str, *, token: str, kuru: bool = False) -> Aday:
+    """`Seçildi` → `Üretiliyor`. Adayı üretim için **kapar**.
+
+    Köprüde eksik olan halka buydu: `sec` adayı `Seçildi` yapıyor, `bitir`
+    `Üretildi`ye çekiyor, ama arada adayın "şu an üretiliyor" olduğunu
+    söyleyen bir adım yoktu. Sonucu iki yönlü:
+
+    - **Çift üretim.** İki koşum aynı anda `Seçildi` kuyruğunu okursa ikisi de
+      aynı adayı görür ve aynı video iki kez üretilir. Saatlik hat için bu
+      teorik değil: gece stoku saat başı koşuyor ve elle tetikleme de aynı
+      kuyruğa bakıyor.
+    - **Görünmezlik.** Üretim 5-10 dakika sürüyor; o aralıkta Notion'a bakan
+      insan adayın hâlâ beklediğini sanıyor.
+
+    Yarışı `_durumu_ilerlet` çözüyor: beklenen durum `Seçildi`, dolayısıyla
+    ikinci koşum PATCH'i geçemiyor ve anlaşılır bir hatayla duruyor. Kapmayı
+    ezmek yerine durmak doğru taraf — iki video üretmek, hiç üretmemekten
+    pahalı.
+
+    Gövdede yalnızca `Durum` var; ölçüm alanlarına dokunulmuyor (ADR-0011).
+    """
+    return _durumu_ilerlet(
+        kimlik,
+        token=token,
+        beklenen=(SECILDI_DURUMU,),
+        ozellikler={"Durum": {"select": {"name": URETILIYOR_DURUMU}}},
+        kuru=kuru,
+    )
+
+
 def adayi_bitir(
     kimlik: str,
     *,

@@ -985,3 +985,49 @@ def test_aday_listele_varsayilan_yeni_kaliyor(kopru, capsys, monkeypatch):
     _, _, govde = sahte.cagrilar[0]
     assert govde["filter"]["select"]["equals"] == notion.DOKUNULMAMIS_DURUM
     capsys.readouterr()
+
+
+def test_basla_secildiden_uretiliyora_gecirir(kopru):
+    """Köprüde eksik olan halka: adayı üretim için kapar."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+
+    aday = notion.adayi_basla(SAYFA_KIMLIGI, token="t")
+
+    (govde,) = sahte.patchler
+    assert govde["properties"] == {"Durum": {"select": {"name": "Üretiliyor"}}}
+    assert aday.durum == "Seçildi"
+
+
+def test_basla_yalnizca_durum_yaziyor(kopru):
+    """Ölçüm alanları video hattına kapalı kalmalı (ADR-0011)."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+    notion.adayi_basla(SAYFA_KIMLIGI, token="t")
+
+    (govde,) = sahte.patchler
+    for olcum_alani in ("Hız", "İvme", "Boşluk skoru", "Talep (okunma)", "Arz", "Sınıf"):
+        assert olcum_alani not in govde["properties"]
+
+
+@pytest.mark.parametrize("durum", ["Yeni", "Üretiliyor", "Üretildi", "Elendi"])
+def test_basla_beklenmeyen_durumda_yazmiyor(kopru, durum):
+    """Çift üretimi engelleyen kilit.
+
+    İki koşum aynı anda `Seçildi` kuyruğunu okursa ikisi de aynı adayı görür.
+    İlki `Üretiliyor` yazınca ikincisinin beklediği durum tutmaz ve PATCH
+    atılmaz — aynı video iki kez üretilmez. Saatlik hat ile elle tetikleme
+    aynı kuyruğa baktığı için bu yarış teorik değil.
+    """
+    sahte = kopru(sayfa=_sahte_sayfa(durum=durum))
+
+    with pytest.raises(notion.NotionHatasi, match="ezmek yerine durduruldu"):
+        notion.adayi_basla(SAYFA_KIMLIGI, token="t")
+
+    assert not sahte.patchler, "beklenmeyen durumda PATCH atılmamalı"
+
+
+def test_basla_kuru_kosum_hic_patch_atmiyor(kopru):
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+    aday = notion.adayi_basla(SAYFA_KIMLIGI, token="t", kuru=True)
+
+    assert aday.durum == "Seçildi"
+    assert not sahte.patchler

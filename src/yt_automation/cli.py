@@ -774,6 +774,18 @@ def _aday_sec(*, hedef: str, kuru: bool) -> int:
     return 0
 
 
+def _aday_basla(*, hedef: str, kuru: bool) -> int:
+    aday = notion.adayi_basla(_aday_kimligi(hedef), token=notion.token_al(), kuru=kuru)
+    if kuru:
+        print(
+            f"[kuru] {aday.baslik} · {aday.durum} → {notion.URETILIYOR_DURUMU}\n"
+            "       Hiçbir şey yazılmadı."
+        )
+        return 0
+    print(f"✅ {aday.baslik} → {notion.URETILIYOR_DURUMU}\n   {aday.sayfa_url}")
+    return 0
+
+
 def _aday_bitir(*, hedef: str, video_url: str, uretim_notu: str | None, kuru: bool) -> int:
     aday = notion.adayi_bitir(
         _aday_kimligi(hedef),
@@ -1079,6 +1091,13 @@ def main(argv: list[str] | None = None) -> int:
     asec.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
     asec.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
 
+    abasla = aday_altlar.add_parser(
+        "basla",
+        help=f"Üretimi kap: {notion.SECILDI_DURUMU} → {notion.URETILIYOR_DURUMU}",
+    )
+    abasla.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
+    abasla.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
+
     abitir = aday_altlar.add_parser(
         "bitir", help=f"Üretim bitti: → {notion.URETILDI_DURUMU} + Video URL"
     )
@@ -1150,6 +1169,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if args.aday_komutu == "sec":
                 return _aday_sec(hedef=args.hedef, kuru=args.kuru)
+            if args.aday_komutu == "basla":
+                return _aday_basla(hedef=args.hedef, kuru=args.kuru)
             if args.aday_komutu == "bitir":
                 return _aday_bitir(
                     hedef=args.hedef,
