@@ -23,12 +23,19 @@ kuru=0
 [ "${1:-}" = "--kuru" ] && kuru=1
 
 # Ayarlanabilir sayılar. Sondaj huninin tek pahalı adımı: 102 birim/sondaj.
-# 20 sondaj = 2.040 birim; çart (~1.182) ve niş (~75) ile birlikte günlük
-# toplam ~3.300/10.000 ediyor ve yükleme rezervine (video başına 1.651)
-# dokunmuyor. `bosluk.SONDAJ_KOTA_TAVANI` zaten 3.000'de ikinci bir tavan.
+#
+# 29 sondaj = 2.958 birim ve `bosluk.SONDAJ_KOTA_TAVANI`'nın (3.000) hemen
+# altında. Kalibre eşiğiyle birlikte ölçüldü (2026-08-06, DW-96): %26,3 geçiş
+# oranıyla günde ~7,6 aday, yani deneme aşamasının 7-8 video hedefi.
+#
+# ⚠️ **Yükleme başlayınca bu sayı düşürülmeli.** Şu an kanal yok, yükleme
+# yapılmıyor ve günlük bütçenin 7.000 birimi boşta duruyor. Yükleme
+# başladığında 6 video 9.606 birim yiyecek; 2.958 + 9.606 = 12.564 > 10.000.
+# O gün sondaj ~4'e inmeli ya da video sayısı azaltılmalı — ikisi aynı
+# bütçeden besleniyor.
 MAKALE="${YT_OTOMASYON_MAKALE:-200}"
 SINIF="${YT_OTOMASYON_SINIF:-200}"
-SONDAJ="${YT_OTOMASYON_SONDAJ:-20}"
+SONDAJ="${YT_OTOMASYON_SONDAJ:-29}"
 KAYNAK="${YT_OTOMASYON_KAYNAK:-20}"
 AKTAR="${YT_OTOMASYON_AKTAR:-20}"
 

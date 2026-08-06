@@ -104,6 +104,22 @@ class SahteYT:
         return {"items": ogeler}
 
 
+@pytest.fixture(autouse=True)
+def sabit_esik(monkeypatch):
+    """Testler eşiğin DEĞERİNİ değil, kapının davranışını sınıyor.
+
+    ⚠️ Eşik üretim kapasitesine göre kalibre ediliyor ve değişiyor (DW-96:
+    2,0 → 0,75). Sentetik test verisi o değere göre kurulduğu için eşik her
+    değiştiğinde konusu tamamen başka olan testler kırılıyordu — boş gün
+    raporlaması, kanal atama, tekrar gönderme koruması. Bunlar kalibrasyondan
+    bağımsız olmalı.
+
+    Kalibrasyonun kendisi kodda ölçümle savunuluyor (`bosluk.ESIK_KALIBRE`
+    yorumundaki tablo); testin işi o sayıyı tekrarlamak değil.
+    """
+    monkeypatch.setattr(bosluk, "ESIK_KALIBRE", 2.0)
+
+
 @pytest.fixture
 def aday(yol: Path):
     """`makale` + `okunma` satırı yazar — sondajın girdisi."""
