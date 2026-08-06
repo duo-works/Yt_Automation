@@ -1031,3 +1031,39 @@ def test_basla_kuru_kosum_hic_patch_atmiyor(kopru):
 
     assert aday.durum == "Seçildi"
     assert not sahte.patchler
+
+
+def test_birak_uretiliyordan_secildiye_dondurur(kopru):
+    """Kapmanın karşılığı — olmadan aday `Üretiliyor`da mahsur kalıyor."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+
+    notion.adayi_birak(SAYFA_KIMLIGI, token="t", uretim_notu="kaynak görsel yok")
+
+    (govde,) = sahte.patchler
+    assert govde["properties"]["Durum"] == {"select": {"name": "Seçildi"}}
+    assert "Üretim notu" in govde["properties"]
+
+
+@pytest.mark.parametrize("durum", ["Yeni", "Seçildi", "Üretildi", "Elendi"])
+def test_birak_beklenmeyen_durumda_yazmiyor(kopru, durum):
+    sahte = kopru(sayfa=_sahte_sayfa(durum=durum))
+
+    with pytest.raises(notion.NotionHatasi, match="ezmek yerine durduruldu"):
+        notion.adayi_birak(SAYFA_KIMLIGI, token="t")
+
+    assert not sahte.patchler
+
+
+def test_kap_birak_kap_dongusu_ayni_adayi_tekrar_verir(kopru):
+    """Düşen üretim kuyruğu tıkamamalı: aday tekrar alınabilir olmalı."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+    notion.adayi_basla(SAYFA_KIMLIGI, token="t")
+
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+    notion.adayi_birak(SAYFA_KIMLIGI, token="t")
+
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
+    notion.adayi_basla(SAYFA_KIMLIGI, token="t")
+
+    (govde,) = sahte.patchler
+    assert govde["properties"]["Durum"] == {"select": {"name": "Üretiliyor"}}

@@ -925,6 +925,32 @@ def adayi_basla(kimlik: str, *, token: str, kuru: bool = False) -> Aday:
     )
 
 
+def adayi_birak(
+    kimlik: str, *, token: str, uretim_notu: str | None = None, kuru: bool = False
+) -> Aday:
+    """`Üretiliyor` → `Seçildi`. Kapmanın geri alınması.
+
+    Kapmanın karşılığı olmadan köprü sızdırıyor: üretim başarısız olduğunda
+    aday `Üretiliyor`da mahsur kalıyor ve kuyruk `Seçildi` okuduğu için bir
+    daha hiç görünmüyor. Sessiz kayıp — insan adayı seçmiş, hat denemiş,
+    tutturamamış ve kimse haberdar değil.
+
+    Gerekçe `Üretim notu`na yazılıyor: aynı aday tekrar denenecekse neden
+    düştüğü elde olsun.
+    """
+    ozellikler: dict = {"Durum": {"select": {"name": SECILDI_DURUMU}}}
+    if uretim_notu:
+        ozellikler["Üretim notu"] = _metin(uretim_notu)
+
+    return _durumu_ilerlet(
+        kimlik,
+        token=token,
+        beklenen=(URETILIYOR_DURUMU,),
+        ozellikler=ozellikler,
+        kuru=kuru,
+    )
+
+
 def adayi_bitir(
     kimlik: str,
     *,

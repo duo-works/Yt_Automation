@@ -786,6 +786,20 @@ def _aday_basla(*, hedef: str, kuru: bool) -> int:
     return 0
 
 
+def _aday_birak(*, hedef: str, uretim_notu: str | None, kuru: bool) -> int:
+    aday = notion.adayi_birak(
+        _aday_kimligi(hedef), token=notion.token_al(), uretim_notu=uretim_notu, kuru=kuru
+    )
+    if kuru:
+        print(
+            f"[kuru] {aday.baslik} · {aday.durum} → {notion.SECILDI_DURUMU}\n"
+            "       Hiçbir şey yazılmadı."
+        )
+        return 0
+    print(f"↩️  {aday.baslik} → {notion.SECILDI_DURUMU} (kuyruğa geri kondu)")
+    return 0
+
+
 def _aday_bitir(*, hedef: str, video_url: str, uretim_notu: str | None, kuru: bool) -> int:
     aday = notion.adayi_bitir(
         _aday_kimligi(hedef),
@@ -1098,6 +1112,16 @@ def main(argv: list[str] | None = None) -> int:
     abasla.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
     abasla.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
 
+    abirak = aday_altlar.add_parser(
+        "birak",
+        help=(
+            f"Üretim düştü, kuyruğa geri koy: {notion.URETILIYOR_DURUMU} → {notion.SECILDI_DURUMU}"
+        ),
+    )
+    abirak.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
+    abirak.add_argument("--not", dest="uretim_notu", help="Neden düştüğü — `Üretim notu`na yazılır")
+    abirak.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
+
     abitir = aday_altlar.add_parser(
         "bitir", help=f"Üretim bitti: → {notion.URETILDI_DURUMU} + Video URL"
     )
@@ -1171,6 +1195,8 @@ def main(argv: list[str] | None = None) -> int:
                 return _aday_sec(hedef=args.hedef, kuru=args.kuru)
             if args.aday_komutu == "basla":
                 return _aday_basla(hedef=args.hedef, kuru=args.kuru)
+            if args.aday_komutu == "birak":
+                return _aday_birak(hedef=args.hedef, uretim_notu=args.uretim_notu, kuru=args.kuru)
             if args.aday_komutu == "bitir":
                 return _aday_bitir(
                     hedef=args.hedef,
