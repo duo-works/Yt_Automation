@@ -57,14 +57,14 @@ def test_bilinmeyen_kanal_tanimlilari_soyluyor():
         kanal.getir("olmayan-kanal")
 
 
-def test_deneme_kanali_ingilizce_yayin_yapiyor():
+def test_shemz_ingilizce_yayin_yapiyor():
     """`varsayilan_dil` doğrudan `snippet.defaultLanguage`'a gidiyor.
 
     İngilizce Shorts hattı (MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`: 35-50
     saniye, 80-120 İngilizce kelime). Dataclass varsayılanı `tr` olduğu için
     profil bunu açıkça geçmezse her videoya yanlış dil etiketi giderdi.
     """
-    assert kanal.getir("deneme").varsayilan_dil == "en"
+    assert kanal.getir("shemz").varsayilan_dil == "en"
 
 
 def test_her_kayitli_kanalin_dogrulanabilir_kimligi_var():

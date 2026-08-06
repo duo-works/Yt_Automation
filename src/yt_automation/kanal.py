@@ -4,11 +4,11 @@ Yükleme hattı kategoriden bağımsız kalacak. Bunu sağlamanın yolu bir soyu
 katmanı değil, **tek bir yer**: kategoriye göre değişen ne varsa bu dosyada
 durur, koda serpilmez. İkinci kanal geldiğinde buraya bir satır eklenir.
 
-⚠️ **Kanal ID'si burada YOK ve gerekmiyor.** `videos.insert` videoyu
-yetkilendirilmiş hesabın kanalına yüklüyor; hangi kanala gideceğini OAuth
-belirliyor, bu profil değil. Buradaki `kimlik` yalnızca bir CLI argümanı ve
-klasör adı. Yanlış kanala yükleme riski varsa çözümü buraya bir ID eklemek
-değil, doğru hesapla yetkilendirmektir.
+⚠️ **Kanal ID'si yönlendirmez, DOĞRULAR.** `videos.insert` videoyu zaten
+token'ın bağlı olduğu kanala yüklüyor; hangi kanala gideceğini OAuth belirliyor,
+bu profil değil. Ama ID olmadan "doğru kanalda mıyız" sorusu sorulamıyor —
+DW-83 bunu ölçtü ve `youtube_kanal_id` o yüzden var. Buradaki `kimlik` ise
+yalnızca bir CLI argümanı ve klasör adı.
 
 ## Strateji geçmişi
 
@@ -22,11 +22,12 @@ kez değişti:
   yani argüman verilmeyen bir yükleme `selfDeclaredMadeForKids=True` ile
   giderdi. Aşağıdaki alanın kendi uyarısı bunun bedelini yazıyor.
 
-⚠️ **Bugün kayıtlı tek kanal bir DENEME kanalı.** Üretim kanalları (uzun +
-Shorts) henüz açılmadı. `muezza` hattı uçtan uca sınamak için var: 1 abone,
-3 video. Buradaki sayılar ve strateji bir deneyin parametreleri, kanıtlanmış
-bir düzen değil — üretim kanalı açıldığında bu profil kopyalanmamalı, kendi
-ölçümüyle yeniden kurulmalı.
+⚠️ **Kayıtlı tek kanal `Shemz`** (2026-08-05'te açıldı, 0 abone / 0 video).
+İkinci kanal (uzun video) henüz açılmadı. Buradaki `varsayilan_dil` ve
+etiketler MoneyPrinterTurbo `CHANNEL_ANALYSIS.md`'deki Shorts stratejisinden
+geliyor; o ölçümler BAŞKA bir kanalda (muezza, 3 video) yapıldı, yani
+kanıtlanmış değil devralınmış varsayımlar. Shemz kendi verisini üretince
+gözden geçirilmeli.
 """
 
 from dataclasses import dataclass, field
@@ -82,9 +83,9 @@ class Kanal:
 
 # Kayıtlı kanallar. Üretim kanalları (uzun + Shorts) açıldığında buraya eklenir.
 KANALLAR: dict[str, Kanal] = {
-    "deneme": Kanal(
-        kimlik="deneme",
-        ad="Mirza Sarıbıyık (kişisel — hat provası)",
+    "shemz": Kanal(
+        kimlik="shemz",
+        ad="Shemz",
         # Kanalda çocuklara yönelik içerik yok. Bu alan `selfDeclaredMadeForKids`
         # olarak gidiyor; yanlış işaretlemenin bedeli yukarıda yazılı.
         cocuk_icerigi=False,
@@ -94,16 +95,15 @@ KANALLAR: dict[str, Kanal] = {
         varsayilan_dil="en",
         varsayilan_etiketler=("history", "shorts"),
         # `channels.list?mine=true` ile ölçüldü (2026-08-05): token bu kanala
-        # bağlı. 0 abone, 0 video — yani hat provası burada yapılıyor.
-        youtube_kanal_id="UCcwguAj4haJDAEHOUixHrSA",
+        # bağlı. 0 abone, 0 video — yayın hattı buraya kuruluyor.
+        youtube_kanal_id="UC9pRuiA5I7KOCjYP_cjfl2g",
     ),
 }
 
-# ⚠️ `muezza` profili BİLEREK yok. Kanal Ömer'de ve token onunla değil kişisel
-# hesapla alındı; ID'si hiç ölçülmedi. ID'siz bir `muezza` profili eklemek,
-# doğrulamayı sessizce atlayan bir profil eklemek olurdu — DW-83'ün kapattığı
-# kusurun aynısı. muezza'ya yükleme yapılacaksa önce o hesapla yetkilendirilip
-# kanal ID'si ölçülmeli, sonra profil eklenmeli.
+# ⚠️ Yeni profil eklemeden önce kanal ID'si ÖLÇÜLMELİ:
+# `channels.list?mine=true` ile o hesapta yetkilendirilip kimlik alınır. ID'siz
+# profil, doğrulamayı sessizce atlayan profildir — DW-83'ün kapattığı kusurun
+# aynısı. `test_her_kayitli_kanalin_dogrulanabilir_kimligi_var` bunu kilitliyor.
 
 
 def getir(kimlik: str) -> Kanal:

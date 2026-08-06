@@ -12,10 +12,10 @@ def test_yukle_komutu_dizin_ve_kanali_aktarir(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(cli, "_yukle", sahte_yukle)
 
-    sonuc = cli.main(["yukle", str(tmp_path), "--kanal", "deneme"])
+    sonuc = cli.main(["yukle", str(tmp_path), "--kanal", "shemz"])
 
     assert sonuc == 0
-    assert cagrilar == [(tmp_path, "deneme")]
+    assert cagrilar == [(tmp_path, "shemz")]
 
 
 def test_yukleme_kalici_sayaci_kullanir(monkeypatch, tmp_path: Path):
