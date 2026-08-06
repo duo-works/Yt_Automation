@@ -173,7 +173,32 @@ ASGARI_FORMAT_GOZLEM = 1
 # Almanca'ydı. `skorla()`'nın docstring'i "talep tarafına bir ölçek katsayısı
 # gerekiyor" diyor; dil bazında ortalamak o katsayıyı pazar başına ampirik
 # kestirmektir.
-ESIK_KALIBRE = 2.0
+#
+# ⚠️ **Eşik üretim kapasitesine göre kalibre edilir, estetiğe göre değil.**
+# 2,0'da ölçülen geçiş oranı %3,5'ti: 20 sondajlık günlük huni günde **0,7
+# aday** üretiyordu. Üretim hattı günde 7-8 video kaldırırken huni tek bir
+# aday bile garanti edemiyordu; darboğaz üretimde değil, kapıdaydı.
+#
+# 114 ölçülmüş adayla kalibre edildi (2026-08-06, DW-96):
+#
+#     eşik   geçiş   20 sondaj   29 sondaj
+#     2,00    3,5%        0,7         1,0
+#     1,25   16,7%        3,3         4,8
+#     1,00   21,1%        4,2         6,1
+#     0,75   26,3%        5,3         7,6   ← seçildi
+#     0,50   27,2%        5,4         7,9
+#
+# 0,75 seçildi çünkü hedefi (29 sondajla 7,6 aday/gün) karşılayan **en
+# seçici** değer. 0,50'ye inmenin kazancı yok: 30 aday yerine 31: dağılımda
+# orada bir boşluk var, yani 0,75 doğal bir kesme noktası.
+#
+# Seçicilik hâlâ anlamlı: adayların %74'ü buradan eleniyor ve talep kapısı
+# ikinci savunma olarak 11 aday daha alıyor.
+#
+# ⚠️ Bu bir **deneme aşaması** ayarı. Kanal oturduğunda hedef video sayısı
+# düşecek ve eşik yeniden yükseltilmeli. Asıl kalibrasyon yayın sonuçlarıyla
+# yapılır — izlenme verisi geldiğinde bu tablo yeniden ölçülmeli.
+ESIK_KALIBRE = 0.75
 
 # Mutlak kapı: zirve günlük Wikipedia okunması.
 #

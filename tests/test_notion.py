@@ -58,6 +58,17 @@ def govde_yazisi(bloklar: list[dict]) -> str:
     )
 
 
+@pytest.fixture(autouse=True)
+def sabit_esik(monkeypatch):
+    """Aktarım testleri kalibrasyondan bağımsız olmalı — bkz. `test_bosluk.py`.
+
+    Eşik üretim kapasitesine göre değişiyor (DW-96); sentetik adaylar o değere
+    göre kurulduğu için eşik her oynadığında konusu "aynı aday iki kez
+    gönderilmesin" olan testler kırılıyordu.
+    """
+    monkeypatch.setattr(bosluk, "ESIK_KALIBRE", 2.0)
+
+
 @pytest.fixture
 def olcum(yol: Path):
     """Trend ölçümü yazar — aktarımın girdisi."""
