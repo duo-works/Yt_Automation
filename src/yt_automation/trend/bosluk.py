@@ -58,7 +58,7 @@ from pathlib import Path
 from statistics import median
 
 from .. import depo, kota
-from . import hiz, konu, toplayici
+from . import hiz, konu, konu_toplayici, toplayici
 
 ARAMA = "search.list"
 ISTATISTIK = "videos.list"
@@ -665,23 +665,24 @@ def sondajlanmamis_adaylar(
 
     baglanti = depo.baglan(yol)
     try:
-        satir = baglanti.execute("SELECT MAX(gun) g FROM okunma").fetchone()
-        gun = satir["g"] if satir else None
-        if gun is None:
-            return []
+        # ⚠️ Pencere, tek gün DEĞİL — bkz. `konu_toplayici.ADAY_PENCERESI_GUN`.
+        # Tek güne bakmak kuyruğu kurutuyordu: gtrends keşfi bugünün tarihiyle
+        # birkaç satır yazınca o gün `MAX(gun)` oluyor ve asıl toplamanın 3.021
+        # satırı görünmez kalıyordu. Ölçüldü: sondajlanmamış aday 1 → 208.
         yukselenler = [
             dict(s)
             for s in baglanti.execute(
                 """
-                SELECT o.dil, o.baslik, o.okunma, m.qid, m.sinif
+                SELECT o.dil, o.baslik, MAX(o.okunma) AS okunma, m.qid, m.sinif
                 FROM okunma o
                 JOIN makale m ON m.dil = o.dil AND m.baslik = o.baslik
-                WHERE o.gun = ?
-                  AND m.sinif IN ('tarih', 'bilim')
+                WHERE m.sinif IN ('tarih', 'bilim')
                   AND m.qid IS NOT NULL
-                ORDER BY o.okunma DESC
+                  AND o.gun >= date((SELECT MAX(gun) FROM okunma), ?)
+                GROUP BY o.dil, o.baslik
+                ORDER BY okunma DESC
                 """,
-                (gun,),
+                (f"-{konu_toplayici.ADAY_PENCERESI_GUN - 1} day",),
             ).fetchall()
         ]
         olculmus = {

@@ -109,29 +109,66 @@ def topla(
     return sonuc
 
 
+ADAY_PENCERESI_GUN = 7
+"""Aday listesi kaç günlük pencereye bakar.
+
+⚠️ Tek güne bakmak huniyi kurutuyordu. Ölçüldü (2026-08-06, DW-92): Google
+Trends keşfi saat başı koşuyor ve eşleştirdiği birkaç makaleyi **bugünün**
+tarihiyle yazıyor. O gün `MAX(gun)` oluyor ve tek-gün sorgusu yalnızca oraya
+bakıyor:
+
+    2026-08-05:     9 satır  ←  gtrends keşfi, 1 tarih/bilim makalesi
+    2026-08-04: 3.021 satır  ←  asıl günlük toplama, 247 tarih/bilim
+
+Yani 247 aday, 9 satırlık bir günün gölgesinde görünmez kaldı. Sondaj
+kapasitesinin %97'si boşta dururken kuyrukta tek aday vardı ve kimse sebebini
+göremiyordu — huni "kurumuş" görünüyordu, oysa doluydu.
+
+Pencere ölçülerek seçildi (sondajlanmamış aday): 1 gün → 1, 2 gün → 183,
+7 gün → 208, 14 gün → 226. Marjinal kazanç 7'den sonra düşüyor; buna karşılık
+eskiyen konu riski artıyor. 7 gün ayrıca birkaç günlük veri kaybına (dizüstü
+kapalı) dayanıklı.
+"""
+
+
 def adaylar(yol: Path, *, gun: str | None = None, limit: int = 40) -> list[dict]:
     """İlgili sınıftaki makaleleri okunmaya göre sıralar.
+
+    Varsayılan olarak son `ADAY_PENCERESI_GUN` günlük pencereye bakar; `gun`
+    verilirse yalnızca o gün. Aynı makale birden çok gün listeye girmişse **en
+    yüksek** okunmasıyla bir kez görünür.
 
     Hız/ivme burada **yok** — o DW-29'un işi ve seri matematiği kaynaktan
     bağımsız olduğu için aynı modül buraya da uygulanacak.
     """
     baglanti = depo.baglan(yol)
     try:
-        if gun is None:
-            satir = baglanti.execute("SELECT MAX(gun) g FROM okunma").fetchone()
-            gun = satir["g"] if satir else None
-        if gun is None:
-            return []
+        if gun is not None:
+            # Açıkça bir gün istendi — pencere uygulanmaz.
+            return [
+                dict(s)
+                for s in baglanti.execute(
+                    """
+                    SELECT o.dil, o.baslik, o.okunma, m.sinif, m.qid
+                    FROM okunma o JOIN makale m ON m.dil = o.dil AND m.baslik = o.baslik
+                    WHERE o.gun = ? AND m.sinif IN ('tarih', 'bilim')
+                    ORDER BY o.okunma DESC LIMIT ?
+                    """,
+                    (gun, limit),
+                ).fetchall()
+            ]
         return [
             dict(s)
             for s in baglanti.execute(
                 """
-                SELECT o.dil, o.baslik, o.okunma, m.sinif, m.qid
+                SELECT o.dil, o.baslik, MAX(o.okunma) AS okunma, m.sinif, m.qid
                 FROM okunma o JOIN makale m ON m.dil = o.dil AND m.baslik = o.baslik
-                WHERE o.gun = ? AND m.sinif IN ('tarih', 'bilim')
-                ORDER BY o.okunma DESC LIMIT ?
+                WHERE m.sinif IN ('tarih', 'bilim')
+                  AND o.gun >= date((SELECT MAX(gun) FROM okunma), ?)
+                GROUP BY o.dil, o.baslik
+                ORDER BY okunma DESC LIMIT ?
                 """,
-                (gun, limit),
+                (f"-{ADAY_PENCERESI_GUN - 1} day", limit),
             ).fetchall()
         ]
     finally:
