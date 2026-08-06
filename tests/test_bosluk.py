@@ -108,7 +108,15 @@ class SahteYT:
 def aday(yol: Path):
     """`makale` + `okunma` satırı yazar — sondajın girdisi."""
 
-    def kur(qid: str, baslik: str, *, dil: str = "en", okunma: int = 100_000, sinif="tarih"):
+    def kur(
+        qid: str,
+        baslik: str,
+        *,
+        dil: str = "en",
+        okunma: int = 100_000,
+        sinif="tarih",
+        gun: str = "2026-07-28",
+    ):
         with depo.yazma_islemi(yol) as baglanti:
             baglanti.execute(
                 "INSERT OR REPLACE INTO makale (dil, baslik, qid, sinif, sinif_kaynagi, "
@@ -117,8 +125,8 @@ def aday(yol: Path):
             )
             baglanti.execute(
                 "INSERT OR REPLACE INTO okunma (dil, baslik, gun, okunma, sira) "
-                "VALUES (?, ?, '2026-07-28', ?, 1)",
-                (dil, baslik, okunma),
+                "VALUES (?, ?, ?, ?, 1)",
+                (dil, baslik, gun, okunma),
             )
 
     return kur
@@ -1416,3 +1424,54 @@ def test_notion_hedef_kanali_yalnizca_gecen_formattan_yazar(yol: Path, aday, mon
 
     elenen = notion.bosluk_ozellikleri(kayitlar["T0"], gun="2026-08-03", kaynak_sayisi=5)
     assert elenen["Hedef kanal"]["select"] is None, "kapıyı geçmeyen adaya kanal atanmamalı"
+
+
+# --- Aday penceresi (DW-92) ----------------------------------------------
+
+
+def test_sonraki_gunun_tek_satiri_dolu_gunu_golgelemiyor(yol: Path, aday):
+    """Huninin kurumasının gerçek sebebi — ölçüldü 2026-08-06.
+
+    Google Trends keşfi saat başı koşuyor ve eşleştirdiği birkaç makaleyi
+    **bugünün** tarihiyle yazıyor. Tek-gün sorgusu `MAX(gun)`'e baktığı için
+    o birkaç satır, bir önceki günün binlerce satırını görünmez yapıyordu:
+
+        2026-08-05:     9 satır  ←  gtrends, 1 tarih/bilim
+        2026-08-04: 3.021 satır  ←  asıl toplama, 247 tarih/bilim
+
+    Sondaj kapasitesinin %97'si boşta dururken kuyrukta tek aday vardı ve
+    huni "kurumuş" görünüyordu.
+    """
+    for i in range(5):
+        aday(f"Q{i}", f"Dolu_Gun_{i}", okunma=100_000 - i, gun="2026-08-04")
+    aday("Q99", "Gtrends_Kirintisi", okunma=50, gun="2026-08-05")
+
+    adaylar = bosluk.sondajlanmamis_adaylar(yol, 50, sitelink_getir=lambda *_: {})
+
+    basliklar = {a["baslik"] for a in adaylar}
+    assert "Dolu_Gun_0" in basliklar, "önceki günün adayları görünmeli"
+    assert len(adaylar) == 6, f"6 aday beklenirken {len(adaylar)} geldi"
+
+
+def test_ayni_makale_pencerede_bir_kez_ve_en_yuksek_okunmayla(yol: Path, aday):
+    """Aynı makale her gün listeye giriyor; kuyrukta tekrarlaması sondajı boşa harcar."""
+    aday("Q1", "Tekrar_Eden", okunma=10_000, gun="2026-08-03")
+    aday("Q1", "Tekrar_Eden", okunma=90_000, gun="2026-08-04")
+
+    adaylar = bosluk.sondajlanmamis_adaylar(yol, 50, sitelink_getir=lambda *_: {})
+
+    tekrar = [a for a in adaylar if a["baslik"] == "Tekrar_Eden"]
+    assert len(tekrar) == 1, "aynı makale bir kez görünmeli"
+    assert tekrar[0]["okunma"] == 90_000, "en yüksek okunma kullanılmalı"
+
+
+def test_pencere_disindaki_gun_alinmiyor(yol: Path, aday):
+    """Pencere sınırsız değil — eskiyen konu huniyi kirletmemeli."""
+    aday("Q1", "Guncel", okunma=100_000, gun="2026-08-04")
+    aday("Q2", "Cok_Eski", okunma=500_000, gun="2026-06-01")
+
+    adaylar = bosluk.sondajlanmamis_adaylar(yol, 50, sitelink_getir=lambda *_: {})
+
+    basliklar = {a["baslik"] for a in adaylar}
+    assert "Guncel" in basliklar
+    assert "Cok_Eski" not in basliklar
