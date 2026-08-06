@@ -717,22 +717,36 @@ def _aday_kimligi(hedef: str) -> str:
     )
 
 
-def _aday_listele(*, format_adi: str | None, limit: int, json_cikti: bool) -> int:
-    adaylar = notion.adaylari_getir(token=notion.token_al(), format_adi=format_adi, adet=limit)
+def _aday_listele(
+    *, format_adi: str | None, limit: int, json_cikti: bool, durum: str | None = None
+) -> int:
+    # `durum` verilmezse `Yeni` — insanın gözden geçireceği liste. Verilirse
+    # başka bir kuyruk okunuyor; asıl kullanımı `Seçildi`, yani **insanın
+    # telefondan işaretlediği ve üretilmeyi bekleyen** adaylar (DW-87).
+    # Notion mobil bu sayede bir kumanda yüzeyi oluyor: yeni servis, açık port
+    # ya da ikinci bir token gerekmiyor.
+    istenen = durum or notion.DOKUNULMAMIS_DURUM
+    adaylar = notion.adaylari_getir(
+        token=notion.token_al(), durum=istenen, format_adi=format_adi, adet=limit
+    )
     if json_cikti:
         print(json.dumps([a.sozluk() for a in adaylar], ensure_ascii=False, indent=2))
         return 0 if adaylar else 1
 
     if not adaylar:
         print(
-            f"`{notion.DOKUNULMAMIS_DURUM}` durumunda aday yok"
+            f"`{istenen}` durumunda aday yok"
             + (f" ({format_adi} formatında)" if format_adi else "")
-            + ".\nHuni boş geçmiş ya da tümü kapılardan elenmiş olabilir: "
-            "`ytoto bosluk rapor` ile bakın."
+            + (
+                ".\nHuni boş geçmiş ya da tümü kapılardan elenmiş olabilir: "
+                "`ytoto bosluk rapor` ile bakın."
+                if istenen == notion.DOKUNULMAMIS_DURUM
+                else ".\nNotion'da bir adayı bu duruma alın; üretim kuyruğu oradan besleniyor."
+            )
         )
         return 1
 
-    print(f"{len(adaylar)} aday · `{notion.DOKUNULMAMIS_DURUM}` · boşluk skoruna göre\n")
+    print(f"{len(adaylar)} aday · `{istenen}` · boşluk skoruna göre\n")
     for aday in adaylar:
         skor = "  —  " if aday.bosluk_skoru is None else f"{aday.bosluk_skoru:6.2f}"
         # Hedef kanal boşsa aday kapının TAMAMINI geçmemiş demek — atanmamış
@@ -1049,6 +1063,14 @@ def main(argv: list[str] | None = None) -> int:
         "--format", dest="format_adi", choices=("shorts", "uzun"), help="Yalnızca bu format"
     )
     al.add_argument("--limit", type=int, default=notion.VARSAYILAN_ADET)
+    al.add_argument(
+        "--durum",
+        choices=(notion.DOKUNULMAMIS_DURUM, notion.SECILDI_DURUMU, notion.URETILIYOR_DURUMU),
+        help=(
+            f"Hangi kuyruk (varsayılan: {notion.DOKUNULMAMIS_DURUM}). "
+            f"`{notion.SECILDI_DURUMU}` = insanın seçtiği, üretilmeyi bekleyen adaylar."
+        ),
+    )
     al.add_argument("--json", dest="json_cikti", action="store_true", help="Makine okunur çıktı")
 
     asec = aday_altlar.add_parser(
@@ -1121,7 +1143,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if args.aday_komutu == "listele":
                 return _aday_listele(
-                    format_adi=args.format_adi, limit=args.limit, json_cikti=args.json_cikti
+                    format_adi=args.format_adi,
+                    limit=args.limit,
+                    json_cikti=args.json_cikti,
+                    durum=args.durum,
                 )
             if args.aday_komutu == "sec":
                 return _aday_sec(hedef=args.hedef, kuru=args.kuru)

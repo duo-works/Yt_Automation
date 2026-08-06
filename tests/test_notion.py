@@ -953,3 +953,35 @@ def test_cli_bozuk_kimlikte_ag_cagrisi_yapmiyor(kopru, capsys):
     assert cli.main(["aday", "sec", "bu-bir-kimlik-degil"]) == 1
     assert not sahte.cagrilar
     assert "sayfa kimliği okunamadı" in capsys.readouterr().err
+
+
+def test_aday_listele_secildi_kuyrugunu_okuyor(kopru, capsys, monkeypatch):
+    """Telefondan tetikleme bu kuyruğa dayanıyor (DW-87).
+
+    İnsan Notion mobilden bir adayı `Seçildi` yapıyor; Mac'teki koşum burayı
+    sorgulayıp üretimi başlatıyor. Bu kuyruk okunamazsa telefon kumandası
+    sessizce çalışmaz — hiçbir hata vermeden hiçbir şey üretilmez.
+    """
+    sahte = kopru()
+    monkeypatch.setenv("NOTION_TOKEN", "t")
+
+    cli.main(["aday", "listele", "--durum", notion.SECILDI_DURUMU, "--json"])
+
+    _, _, govde = sahte.cagrilar[0]
+    assert govde["filter"] == {
+        "property": "Durum",
+        "select": {"equals": notion.SECILDI_DURUMU},
+    }
+    capsys.readouterr()
+
+
+def test_aday_listele_varsayilan_yeni_kaliyor(kopru, capsys, monkeypatch):
+    """`--durum` verilmezse davranış değişmemeli — mevcut tüketiciler kırılmasın."""
+    sahte = kopru()
+    monkeypatch.setenv("NOTION_TOKEN", "t")
+
+    cli.main(["aday", "listele", "--json"])
+
+    _, _, govde = sahte.cagrilar[0]
+    assert govde["filter"]["select"]["equals"] == notion.DOKUNULMAMIS_DURUM
+    capsys.readouterr()
