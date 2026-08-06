@@ -717,22 +717,36 @@ def _aday_kimligi(hedef: str) -> str:
     )
 
 
-def _aday_listele(*, format_adi: str | None, limit: int, json_cikti: bool) -> int:
-    adaylar = notion.adaylari_getir(token=notion.token_al(), format_adi=format_adi, adet=limit)
+def _aday_listele(
+    *, format_adi: str | None, limit: int, json_cikti: bool, durum: str | None = None
+) -> int:
+    # `durum` verilmezse `Yeni` — insanın gözden geçireceği liste. Verilirse
+    # başka bir kuyruk okunuyor; asıl kullanımı `Seçildi`, yani **insanın
+    # telefondan işaretlediği ve üretilmeyi bekleyen** adaylar (DW-87).
+    # Notion mobil bu sayede bir kumanda yüzeyi oluyor: yeni servis, açık port
+    # ya da ikinci bir token gerekmiyor.
+    istenen = durum or notion.DOKUNULMAMIS_DURUM
+    adaylar = notion.adaylari_getir(
+        token=notion.token_al(), durum=istenen, format_adi=format_adi, adet=limit
+    )
     if json_cikti:
         print(json.dumps([a.sozluk() for a in adaylar], ensure_ascii=False, indent=2))
         return 0 if adaylar else 1
 
     if not adaylar:
         print(
-            f"`{notion.DOKUNULMAMIS_DURUM}` durumunda aday yok"
+            f"`{istenen}` durumunda aday yok"
             + (f" ({format_adi} formatında)" if format_adi else "")
-            + ".\nHuni boş geçmiş ya da tümü kapılardan elenmiş olabilir: "
-            "`ytoto bosluk rapor` ile bakın."
+            + (
+                ".\nHuni boş geçmiş ya da tümü kapılardan elenmiş olabilir: "
+                "`ytoto bosluk rapor` ile bakın."
+                if istenen == notion.DOKUNULMAMIS_DURUM
+                else ".\nNotion'da bir adayı bu duruma alın; üretim kuyruğu oradan besleniyor."
+            )
         )
         return 1
 
-    print(f"{len(adaylar)} aday · `{notion.DOKUNULMAMIS_DURUM}` · boşluk skoruna göre\n")
+    print(f"{len(adaylar)} aday · `{istenen}` · boşluk skoruna göre\n")
     for aday in adaylar:
         skor = "  —  " if aday.bosluk_skoru is None else f"{aday.bosluk_skoru:6.2f}"
         # Hedef kanal boşsa aday kapının TAMAMINI geçmemiş demek — atanmamış
@@ -757,6 +771,32 @@ def _aday_sec(*, hedef: str, kuru: bool) -> int:
         )
         return 0
     print(f"✅ {aday.baslik} → {notion.SECILDI_DURUMU}\n   {aday.sayfa_url}")
+    return 0
+
+
+def _aday_basla(*, hedef: str, kuru: bool) -> int:
+    aday = notion.adayi_basla(_aday_kimligi(hedef), token=notion.token_al(), kuru=kuru)
+    if kuru:
+        print(
+            f"[kuru] {aday.baslik} · {aday.durum} → {notion.URETILIYOR_DURUMU}\n"
+            "       Hiçbir şey yazılmadı."
+        )
+        return 0
+    print(f"✅ {aday.baslik} → {notion.URETILIYOR_DURUMU}\n   {aday.sayfa_url}")
+    return 0
+
+
+def _aday_birak(*, hedef: str, uretim_notu: str | None, kuru: bool) -> int:
+    aday = notion.adayi_birak(
+        _aday_kimligi(hedef), token=notion.token_al(), uretim_notu=uretim_notu, kuru=kuru
+    )
+    if kuru:
+        print(
+            f"[kuru] {aday.baslik} · {aday.durum} → {notion.SECILDI_DURUMU}\n"
+            "       Hiçbir şey yazılmadı."
+        )
+        return 0
+    print(f"↩️  {aday.baslik} → {notion.SECILDI_DURUMU} (kuyruğa geri kondu)")
     return 0
 
 
@@ -1049,6 +1089,14 @@ def main(argv: list[str] | None = None) -> int:
         "--format", dest="format_adi", choices=("shorts", "uzun"), help="Yalnızca bu format"
     )
     al.add_argument("--limit", type=int, default=notion.VARSAYILAN_ADET)
+    al.add_argument(
+        "--durum",
+        choices=(notion.DOKUNULMAMIS_DURUM, notion.SECILDI_DURUMU, notion.URETILIYOR_DURUMU),
+        help=(
+            f"Hangi kuyruk (varsayılan: {notion.DOKUNULMAMIS_DURUM}). "
+            f"`{notion.SECILDI_DURUMU}` = insanın seçtiği, üretilmeyi bekleyen adaylar."
+        ),
+    )
     al.add_argument("--json", dest="json_cikti", action="store_true", help="Makine okunur çıktı")
 
     asec = aday_altlar.add_parser(
@@ -1056,6 +1104,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     asec.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
     asec.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
+
+    abasla = aday_altlar.add_parser(
+        "basla",
+        help=f"Üretimi kap: {notion.SECILDI_DURUMU} → {notion.URETILIYOR_DURUMU}",
+    )
+    abasla.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
+    abasla.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
+
+    abirak = aday_altlar.add_parser(
+        "birak",
+        help=(
+            f"Üretim düştü, kuyruğa geri koy: {notion.URETILIYOR_DURUMU} → {notion.SECILDI_DURUMU}"
+        ),
+    )
+    abirak.add_argument("hedef", help="Notion sayfa URL'i ya da 32 haneli kimlik")
+    abirak.add_argument("--not", dest="uretim_notu", help="Neden düştüğü — `Üretim notu`na yazılır")
+    abirak.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
 
     abitir = aday_altlar.add_parser(
         "bitir", help=f"Üretim bitti: → {notion.URETILDI_DURUMU} + Video URL"
@@ -1121,10 +1186,17 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if args.aday_komutu == "listele":
                 return _aday_listele(
-                    format_adi=args.format_adi, limit=args.limit, json_cikti=args.json_cikti
+                    format_adi=args.format_adi,
+                    limit=args.limit,
+                    json_cikti=args.json_cikti,
+                    durum=args.durum,
                 )
             if args.aday_komutu == "sec":
                 return _aday_sec(hedef=args.hedef, kuru=args.kuru)
+            if args.aday_komutu == "basla":
+                return _aday_basla(hedef=args.hedef, kuru=args.kuru)
+            if args.aday_komutu == "birak":
+                return _aday_birak(hedef=args.hedef, uretim_notu=args.uretim_notu, kuru=args.kuru)
             if args.aday_komutu == "bitir":
                 return _aday_bitir(
                     hedef=args.hedef,
