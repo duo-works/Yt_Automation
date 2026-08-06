@@ -49,6 +49,16 @@ def _yol(ortam_degiskeni: str) -> Path:
     return Path(ham).expanduser()
 
 
+def client_secret_yolu() -> Path:
+    """`YT_CLIENT_SECRET_PATH` — Drive gibi başka akışlar da aynı istemciyi kullanır.
+
+    Aynı OAuth istemcisi paylaşılıyor ama **token'lar ayrı**: dar kapsamlı bir
+    akışın geniş kapsamlı token'ı üzerine yazması ölçülmüş bir hataydı
+    (2026-08-06, kanal doğrulaması sessizce bozuldu).
+    """
+    return _yol("YT_CLIENT_SECRET_PATH")
+
+
 def _kaydet(kimlik_bilgisi: Credentials, token_yolu: Path) -> None:
     """Token'ı **yalnızca sahibinin okuyabileceği** izinle yazar.
 

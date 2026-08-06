@@ -22,7 +22,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import __version__, depo, kanal, kota, oauth
+from . import __version__, depo, drive, kanal, kota, oauth
 from .kota import KotaAsimi
 from .trend import (
     bolge,
@@ -774,6 +774,43 @@ def _aday_sec(*, hedef: str, kuru: bool) -> int:
     return 0
 
 
+def _drive_yukle(*, dizin: Path, klasor: str, kuru: bool) -> int:
+    """Üretilen videoları Drive'a yükler ve paylaşılabilir bağlantıyı basar."""
+    videolar = sorted(dizin.glob("*.mp4"))
+    if not videolar:
+        print(f"{dizin} içinde .mp4 yok.", file=sys.stderr)
+        return 1
+
+    toplam_mb = sum(v.stat().st_size for v in videolar) / 1_048_576
+    if kuru:
+        print(f"KURU KOŞUM — Drive yüklemesi · klasör: {klasor}")
+        print(f"  {len(videolar)} video · {toplam_mb:.0f} MB")
+        for v in videolar:
+            print(f"    · {v.name} ({v.stat().st_size / 1_048_576:.1f} MB)")
+        print("  Hiçbir şey yüklenmedi.")
+        return 0
+
+    try:
+        baglanti, yuklenenler = drive.videolari_yukle(
+            videolar,
+            klasor_adi=klasor,
+            client_secret=oauth.client_secret_yolu(),
+        )
+    except drive.DriveHatasi as hata:
+        print(f"HATA: {hata}", file=sys.stderr)
+        return 1
+
+    atlanan = len(videolar) - len(yuklenenler)
+    print(
+        f"✅ {len(yuklenenler)} video yüklendi"
+        + (f" · {atlanan} atlandı (zaten var)" if atlanan else "")
+    )
+    for y in yuklenenler:
+        print(f"   · {y.ad}")
+    print(f"\n🔗 {baglanti}")
+    return 0
+
+
 def _aday_basla(*, hedef: str, kuru: bool) -> int:
     aday = notion.adayi_basla(_aday_kimligi(hedef), token=notion.token_al(), kuru=kuru)
     if kuru:
@@ -1079,6 +1116,17 @@ def main(argv: list[str] | None = None) -> int:
     # Köprünün tüketici ucu: video hattı adayı buradan alır ve durumunu
     # buradan ilerletir. Notion istemcisi yazmasına gerek yok — sözleşmenin
     # sahibi dar bir operasyon veriyor (ADR-0013).
+    dr = altlar.add_parser(
+        "drive", help="Üretilen videoları Drive'a yükle ve paylaşılabilir bağlantı ver"
+    )
+    dr.add_argument("dizin", type=Path, help="İçindeki .mp4'ler yüklenir")
+    dr.add_argument(
+        "--klasor",
+        default="Yt Otomasyon — Video Çıktıları",
+        help="Drive klasör adı (varsayılan: 'Yt Otomasyon — Video Çıktıları')",
+    )
+    dr.add_argument("--kuru", action="store_true", help="Ne yükleneceğini göster, yükleme")
+
     aday_ay = altlar.add_parser("aday", help="Trend Adayları köprüsü — video hattının arayüzü")
     aday_altlar = aday_ay.add_subparsers(dest="aday_komutu", required=True)
 
@@ -1160,6 +1208,8 @@ def main(argv: list[str] | None = None) -> int:
             return _bosluk_tazele(limit=args.limit, tavan=args.tavan, kuru=args.kuru)
         if args.bosluk_komutu == "rapor":
             return _bosluk_rapor(limit=args.limit)
+    if args.komut == "drive":
+        return _drive_yukle(dizin=args.dizin, klasor=args.klasor, kuru=args.kuru)
     if args.komut == "nis":
         if args.nis_komutu == "izle":
             return _nis_izle(kuru=args.kuru)
