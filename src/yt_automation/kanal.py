@@ -94,9 +94,15 @@ KANALLAR: dict[str, Kanal] = {
         # yanlış `defaultLanguage` giderdi.
         varsayilan_dil="en",
         varsayilan_etiketler=("history", "shorts"),
-        # `channels.list?mine=true` ile ölçüldü (2026-08-05): token bu kanala
-        # bağlı. 0 abone, 0 video — yayın hattı buraya kuruluyor.
-        youtube_kanal_id="UC9pRuiA5I7KOCjYP_cjfl2g",
+        # `channels.list?mine=true` ile ölçüldü (2026-08-08): 7 Ağustos 2026'da
+        # açıldı, @shemz1.2, 0 abone, 0 video.
+        #
+        # ⚠️ Buradaki kimlik 2026-08-07'ye kadar `UC9pRuiA5I7KOCjYP_cjfl2g`
+        # idi. O kanal "bot aktivitesi" gerekçesiyle Google tarafından
+        # kapatıldı ve yerine yenisi açıldı — **adı aynı**: "Shemz". Ada bakan
+        # bir doğrulama ikisini ayırt edemezdi; doğrulamanın kimliğe bakması
+        # tam olarak bu yüzden.
+        youtube_kanal_id="UCT0QM0yWjfL9Xr8tYfgoqog",
     ),
 }
 
