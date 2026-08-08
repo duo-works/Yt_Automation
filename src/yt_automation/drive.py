@@ -124,11 +124,26 @@ def baglanti_ac(servis, klasor_kimligi: str) -> str:
     bağlantı paylaşılmadıkça kimse ulaşamaz. Yine de yazma yetkisi
     verilmiyor — yalnızca `reader`.
     """
-    servis.permissions().create(
-        fileId=klasor_kimligi,
-        body={"role": "reader", "type": "anyone"},
-        fields="id",
-    ).execute()
+    from googleapiclient.errors import HttpError
+
+    try:
+        servis.permissions().create(
+            fileId=klasor_kimligi,
+            body={"role": "reader", "type": "anyone"},
+            fields="id",
+        ).execute()
+    except HttpError as hata:
+        # ⚠️ Ölçüldü (2026-08-08): klasörde bizim uygulamamızın oluşturmadığı
+        # bir dosya varsa `drive.file` kapsamı bu çağrıyı 403
+        # `appNotAuthorizedToChild` ile reddediyor — klasörün izni çocuğu da
+        # etkileyeceği için.
+        #
+        # Bu hata YÜKLEMEDEN SONRA geliyordu ve bütün koşumu düşürüyordu:
+        # video Drive'a çıkmış olmasına rağmen çağıran taraf hata görüyor ve
+        # bağlantıyı alamıyordu. Paylaşım bir YAN İŞ; klasör zaten paylaşılmış
+        # olabilir ve bağlantı her hâlükârda geçerli.
+        if hata.resp.status != 403:
+            raise
     return f"https://drive.google.com/drive/folders/{klasor_kimligi}"
 
 
