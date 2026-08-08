@@ -45,12 +45,26 @@ class SahteDosyalar:
 
 
 class SahteIzinler:
-    def __init__(self):
+    def __init__(self, hata=None):
         self.verilenler = []
+        self._hata = hata
 
     def create(self, *, fileId, body, fields):  # noqa: N803
         self.verilenler.append((fileId, body))
+        if self._hata is not None:
+            raise self._hata
         return SahteIstek({"id": "izin-1"})
+
+
+def _http_hatasi(durum: int):
+    """`googleapiclient.errors.HttpError` — gerçek sınıf, gerçek `resp.status`."""
+    from googleapiclient.errors import HttpError
+
+    class _Yanit:
+        status = durum
+        reason = "test"
+
+    return HttpError(_Yanit(), b"{}")
 
 
 class SahteServis:
@@ -160,6 +174,32 @@ def test_paylasim_yalnizca_okuma_veriyor():
     assert govde["role"] == "reader"
     assert govde["type"] == "anyone"
     assert baglanti.endswith("klasor-9")
+
+
+def test_paylasim_reddedilse_bile_baglanti_donuyor():
+    """⚠️ Ölçüldü (2026-08-08): yükleme başarılıyken koşum HATA ile düşüyordu.
+
+    Klasörde uygulamamızın oluşturmadığı bir dosya varsa `drive.file` kapsamı
+    izin çağrısını 403 `appNotAuthorizedToChild` ile reddediyor — klasörün
+    izni çocuğu da etkileyeceği için. Bu hata yüklemeden SONRA geldiği için
+    video Drive'a çıkmış oluyor ama çağıran taraf bağlantıyı alamıyordu.
+
+    Paylaşım bir yan iş: klasör zaten paylaşılmış olabilir ve bağlantı her
+    hâlükârda geçerli.
+    """
+    izinler = SahteIzinler(hata=_http_hatasi(403))
+    servis = SahteServis(SahteDosyalar(), izinler)
+
+    assert drive.baglanti_ac(servis, "klasor-9").endswith("klasor-9")
+
+
+def test_paylasimdaki_baska_hatalar_yutulmuyor():
+    """403 dışındaki hatalar gerçek arıza — sessizce geçilmemeli."""
+    izinler = SahteIzinler(hata=_http_hatasi(500))
+    servis = SahteServis(SahteDosyalar(), izinler)
+
+    with pytest.raises(Exception, match="500"):
+        drive.baglanti_ac(servis, "klasor-9")
 
 
 def test_olmayan_dosya_erken_hata(tmp_path):
