@@ -33,6 +33,7 @@ from .trend import (
     konu_toplayici,
     nis,
     notion,
+    oneri,
     sicrama,
     siniflandirici,
     tiktok,
@@ -592,6 +593,20 @@ def _konu_gtrends(*, kuru: bool) -> int:
                         continue
                     ok = f"→ {eslesme.replace('_', ' ')}" if eslesme else "→ eşleşme yok"
                     print(f"    · {t.terim} ({t.trafik or '?'}) {ok}")
+
+        # Öneri kaynağı (DW-111) — aynı kuru koşumda, çünkü ikisi de aynı
+        # boruyu besliyor ve "bugün ne gelirdi" sorusu ortak.
+        print(f"KURU KOŞUM — YouTube arama önerileri · tohum: {oneri.TOHUM_DEGISKENI}")
+        for dil in pazarlar:
+            for geo in oneri.GEO_KODLARI.get(dil, ()):
+                try:
+                    terimler = oneri.terimleri_cek(geo)
+                except oneri.OneriHatasi as hata:
+                    print(f"  {geo}: HATA {hata}", file=sys.stderr)
+                    continue
+                print(f"  {geo}: {len(terimler)} öneri ({len(oneri.tohumlar(dil))} tohumdan)")
+                for t in terimler[:5]:
+                    print(f"    · {t.terim}")
         return 0
 
     sonuc = gtrends.isle(yol)
@@ -606,6 +621,19 @@ def _konu_gtrends(*, kuru: bool) -> int:
         print(f"tiktok · {tt.ozet()}")
     elif tiktok.dosya_yolu() is None:
         print(f"tiktok · atlandı ({tiktok.DOSYA_DEGISKENI} tanımlı değil)")
+
+    # YouTube arama önerileri (DW-111) — talep sinyali platformun kendisinden.
+    # Gayriresmî uç: kırılırsa hattı düşürmemeli, o yüzden hatası yakalanıyor
+    # ve yalnızca raporlanıyor (ADR-0010'un yumuşak düşme kuralı).
+    try:
+        on = oneri.isle(yol)
+    except oneri.OneriHatasi as hata:
+        print(f"öneri · atlandı ({hata})", file=sys.stderr)
+    else:
+        print(f"öneri · {on.ozet()}")
+        for hata in on.hatalar[:5]:
+            print(f"  hata: {hata}", file=sys.stderr)
+
     # Terim gelmemesi hata (RSS kırık olabilir), eşleşme az olması değil:
     # magazin/spor ağırlıklı listede düşük eşleşme normal gün.
     return 1 if sonuc.terim == 0 else 0
