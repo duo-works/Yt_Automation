@@ -938,6 +938,10 @@ def test_cli_json_cikti_semasi(kopru, capsys):
         "bosluk_skoru",
         "talep",
         "baglanti",
+        # ⚠️ `baglanti` ile aynı şey DEĞİL: o konunun kaynağı (Wikipedia
+        # makalesi), bu hattın ürettiği videonun adresi. Performans geri
+        # beslemesi (`ytoto performans`) bu alandan besleniyor.
+        "video_url",
     }
 
 

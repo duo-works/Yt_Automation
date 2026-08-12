@@ -734,6 +734,11 @@ class Aday:
     bosluk_skoru: float | None = None
     talep: float | None = None
     baglanti: str | None = None
+    # ⚠️ `baglanti` ile karıştırılmamalı: o, konunun KAYNAĞI (Wikipedia
+    # makalesi); bu, hattın ÜRETTİĞİ videonun adresi. İkisi ayrı sütun ve
+    # ayrı yönde akıyor — biri huniye girdi, diğeri huninin çıktısı.
+    # Performans geri beslemesi (geri_besleme.py) bu alandan besleniyor.
+    video_url: str | None = None
 
     def sozluk(self) -> dict:
         """`--json` çıktısının şeması — `tablo_studio`'nun tükettiği arayüz.
@@ -753,6 +758,7 @@ class Aday:
             "bosluk_skoru": self.bosluk_skoru,
             "talep": self.talep,
             "baglanti": self.baglanti,
+            "video_url": self.video_url,
         }
 
 
@@ -788,6 +794,7 @@ def _adayi_coz(sayfa: dict) -> Aday:
         bosluk_skoru=_number(ozellikler, "Boşluk skoru"),
         talep=_number(ozellikler, "Talep (okunma)"),
         baglanti=(ozellikler.get("Bağlantı") or {}).get("url"),
+        video_url=(ozellikler.get("Video URL") or {}).get("url"),
     )
 
 
