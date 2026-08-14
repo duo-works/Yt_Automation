@@ -53,9 +53,7 @@ def test_esik_dosya_sayisina_gore_eliyor(monkeypatch):
         return ["Category:Zengin", "Category:Fakir"]
 
     monkeypatch.setattr(arsiv, "alt_kategoriler", sahte_alt)
-    monkeypatch.setattr(
-        arsiv, "dosya_sayisi", lambda k, tavan=200: 80 if "Zengin" in k else 3
-    )
+    monkeypatch.setattr(arsiv, "dosya_sayisi", lambda k, tavan=200: 80 if "Zengin" in k else 3)
     monkeypatch.setattr(arsiv, "tohumlar", lambda _dil: ("Category:Tohum",))
 
     adaylar = arsiv.adaylari_bul("en")
@@ -76,7 +74,7 @@ def test_esik_URETIM_esigiyle_bagli():
 
 
 def test_ara_kategoriler_dogal_olarak_eleniyor(monkeypatch):
-    """"by city"/"by country" kategorilerinde dosya yok; ölçüldü (canlı).
+    """ "by city"/"by country" kategorilerinde dosya yok; ölçüldü (canlı).
 
     Ayrı bir ad filtresi yazmaya gerek yok — dosya sayısı sıfır olduğu için
     eşik onları zaten eliyor. Kural sayıya bağlı kalıyor, adlandırmaya değil.
@@ -111,11 +109,7 @@ def test_kategori_P301_ile_MAKALEYE_cevriliyor(monkeypatch):
             "claims": {
                 "entities": {
                     "Q100": {
-                        "claims": {
-                            "P301": [
-                                {"mainsnak": {"datavalue": {"value": {"id": "Q200"}}}}
-                            ]
-                        }
+                        "claims": {"P301": [{"mainsnak": {"datavalue": {"value": {"id": "Q200"}}}}]}
                     }
                 }
             },
@@ -178,9 +172,7 @@ def test_terimler_gtrends_bicimindeydi(monkeypatch):
 def test_ayni_dil_iki_kez_taranmiyor(monkeypatch):
     """Commons dilden bağımsız; her coğrafya için yeniden taramak israf."""
     sayac = []
-    monkeypatch.setattr(
-        arsiv, "adaylari_bul", lambda _dil, asgari=None: sayac.append(1) or []
-    )
+    monkeypatch.setattr(arsiv, "adaylari_bul", lambda _dil, asgari=None: sayac.append(1) or [])
 
     arsiv.terimleri_cek("en")
     arsiv.terimleri_cek("en")

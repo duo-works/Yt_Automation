@@ -274,7 +274,7 @@ def ana_konu(oge: str) -> str | None:
     )
     iddialar = ((veri.get("entities", {}) or {}).get(oge, {}) or {}).get("claims", {}) or {}
     for iddia in iddialar.get(ANA_KONU_OZELLIGI, []) or []:
-        deger = (((iddia.get("mainsnak") or {}).get("datavalue") or {}).get("value") or {})
+        deger = ((iddia.get("mainsnak") or {}).get("datavalue") or {}).get("value") or {}
         if kimlik := deger.get("id"):
             return str(kimlik)
     return None
@@ -342,9 +342,7 @@ def makale_bul(dil: str, terim: str) -> str | None:
     kategori = _TERIM_KATEGORI.get(terim)
     if kategori:
         try:
-            if (oge := wikidata_ogesi(kategori)) and (
-                baslik := makale_baglantisi(oge, dil)
-            ):
+            if (oge := wikidata_ogesi(kategori)) and (baslik := makale_baglantisi(oge, dil)):
                 return baslik
         except ArsivHatasi:
             pass
@@ -381,9 +379,7 @@ def adaylari_bul(dil: str, *, asgari: int = ASGARI_DOSYA) -> list[KategoriAdayi]
                 continue
             if adet >= asgari:
                 adaylar.append(
-                    KategoriAdayi(
-                        baslik=_basliga_cevir(kategori), kategori=kategori, dosya=adet
-                    )
+                    KategoriAdayi(baslik=_basliga_cevir(kategori), kategori=kategori, dosya=adet)
                 )
     return adaylar
 
