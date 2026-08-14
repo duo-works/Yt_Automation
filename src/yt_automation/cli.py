@@ -25,6 +25,7 @@ from pathlib import Path
 from . import __version__, depo, drive, kanal, kota, oauth
 from .kota import KotaAsimi
 from .trend import (
+    arsiv,
     bolge,
     bosluk,
     gtrends,
@@ -607,6 +608,20 @@ def _konu_gtrends(*, kuru: bool) -> int:
                 print(f"  {geo}: {len(terimler)} öneri ({len(oneri.tohumlar(dil))} tohumdan)")
                 for t in terimler[:5]:
                     print(f"    · {t.terim}")
+
+        # Arşiv-önce kaynak: aynı kuru koşumda, çünkü o da aynı boruyu
+        # besliyor. ⚠️ Diğerlerinden farkı YÖNÜ — talebi ölçüp arzı
+        # varsaymıyor, arşivi zengin konudan başlayıp talebi sonra ölçüyor.
+        print(f"KURU KOŞUM — arşiv kategorileri · eşik: {arsiv.ASGARI_DOSYA}+ dosya")
+        for dil in pazarlar:
+            try:
+                adaylar = arsiv.adaylari_bul(dil)
+            except arsiv.ArsivHatasi as hata:
+                print(f"  {dil}: HATA {hata}", file=sys.stderr)
+                continue
+            print(f"  {dil}: {len(adaylar)} aday ({len(arsiv.tohumlar(dil))} tohumdan)")
+            for a in adaylar[:5]:
+                print(f"    · {a.baslik} ({a.dosya}+ dosya) → {arsiv.makale_bul(dil, a.baslik)}")
         return 0
 
     sonuc = gtrends.isle(yol)
@@ -632,6 +647,22 @@ def _konu_gtrends(*, kuru: bool) -> int:
     else:
         print(f"öneri · {on.ozet()}")
         for hata in on.hatalar[:5]:
+            print(f"  hata: {hata}", file=sys.stderr)
+
+    # Arşiv-önce kaynak (2026-08-14). ⚠️ Diğer kaynaklardan farkı YÖNÜ:
+    # onlar talebi ölçüp arzı varsayıyor, bu önce Commons'ta arşivi zengin
+    # konuyu buluyor sonra talebi ölçüyor. Ölçüldü: `Yeni` kuyruğundaki 40
+    # adayın 40'ı üretilemezdi ve üretim beslenmediği için durdu.
+    #
+    # Hatası hattı düşürmüyor (ADR-0010 yumuşak düşme): Commons ücretsiz
+    # ama garantili değil, ve diğer iki kaynak çalışmaya devam etmeli.
+    try:
+        ar = arsiv.isle(yol)
+    except arsiv.ArsivHatasi as hata:
+        print(f"arşiv · atlandı ({hata})", file=sys.stderr)
+    else:
+        print(f"arşiv · {ar.ozet()}")
+        for hata in ar.hatalar[:5]:
             print(f"  hata: {hata}", file=sys.stderr)
 
     # Terim gelmemesi hata (RSS kırık olabilir), eşleşme az olması değil:
