@@ -232,10 +232,38 @@ def test_isle_gtrends_borusunu_KULLANIYOR(monkeypatch, tmp_path):
 def test_tohumlar_konuya_capali():
     """⚠️ DW-111'de ölçüldü: cümle kalıbı tohumları 0/24 tarih konusu verdi,
     konu çapalı tohumlar 6/24. Buradaki karşılığı üst kategori seçimi."""
-    tohumlar = arsiv.VARSAYILAN_TOHUMLAR["en"]
+    tohumlar = arsiv.VARSAYILAN_TOHUMLAR
 
     assert len(tohumlar) >= 5
     assert all(t.startswith("Category:") for t in tohumlar)
+
+
+def test_tohumlar_DILDEN_BAGIMSIZ():
+    """⚠️ Ölçüldü (2026-08-14, canlı): ilk sürüm tohumları `{"en": (...)}`
+    diye tutuyordu ve `es` pazarı **0 tohum** alıyordu — İspanyolca hiç
+    beslenmiyordu.
+
+    Commons dilden bağımsız tek bir depo; dile bağlı olan tek şey makale
+    bağlantısı ve onu Wikidata köprüsü hallediyor.
+    """
+    assert arsiv.tohumlar("es") == arsiv.tohumlar("en") == arsiv.VARSAYILAN_TOHUMLAR
+
+
+def test_liste_makalesi_konu_sayilmiyor():
+    """⚠️ Ölçüldü (canlı): 35 adayın çoğu liste makalesine düşüyordu —
+    "List_of_archaeological_sites_in_Chile". Liste bir dizin sayfası, bir
+    Short'un anlatacağı tekil konu değil."""
+    assert arsiv._liste_makalesi_mi("List_of_archaeological_sites_in_Chile")
+    assert arsiv._liste_makalesi_mi("Lists of shipwrecks")
+    assert not arsiv._liste_makalesi_mi("Mastaba")
+    assert not arsiv._liste_makalesi_mi("Roman_aqueduct")
+
+
+def test_liste_makalesi_kopruden_donmuyor(monkeypatch):
+    monkeypatch.setattr(arsiv, "ana_konu", lambda _oge: "Q200")
+    monkeypatch.setattr(arsiv, "_sitelink", lambda _o, _d: "List_of_castles_in_Croatia")
+
+    assert arsiv.makale_baglantisi("Q100", "en") is None
 
 
 def test_tohum_dosyasi_varsayilanin_YERINE_geciyor(monkeypatch, tmp_path):
@@ -300,3 +328,33 @@ def test_govde_utf8_disi_bozuk_baytta_dusmuyor(monkeypatch):
 
     with pytest.raises(arsiv.ArsivHatasi):
         arsiv._iste({"action": "query"})
+
+
+# --- Günlük nöbet ---------------------------------------------------------
+
+
+def test_nobet_dosyasi_gune_gore(tmp_path):
+    yol = arsiv.gunluk_nobet(tmp_path, gun="2026-08-15")
+
+    assert yol.name == ".arsiv-2026-08-15"
+    assert yol.parent == tmp_path
+
+
+def test_nobet_maliyeti_kisitliyor():
+    """⚠️ Ölçüldü (2026-08-14): tam tarama ~5,5 dk (10 tohum × ~60 alt
+    kategori × 2 istek) ve `saatlik-tarama.sh` bu komutu SAATTE BİR
+    çağırıyor — günde ~44 dakika boşa Commons trafiği olurdu.
+
+    Kategori üyeliği gün içinde değişmiyor; tazelik kazancı yok.
+    """
+    from pathlib import Path
+
+    kaynak = Path(arsiv.__file__).resolve().parent.parent.joinpath("cli.py")
+    metin = kaynak.read_text(encoding="utf-8")
+
+    assert "arsiv.gunluk_nobet" in metin
+    assert "bugün tarandı" in metin
+    # Nöbet yalnızca BAŞARIDA konmalı: düşen tarama ertesi saat denensin.
+    hedef = metin.index("arsiv.gunluk_nobet")
+    govde = metin[hedef : hedef + 1200]
+    assert govde.index("nobet.touch()") > govde.index("ar.hatalar")

@@ -67,7 +67,7 @@ ALT_KATEGORI_SINIRI = 60
 """Tohum başına taranacak en fazla alt kategori. Tohum sayısı × bu sayı kadar
 dosya-sayımı isteği atılıyor; Commons anahtarsız ama sonsuz da değil."""
 
-VARSAYILAN_TOHUMLAR: dict[str, tuple[str, ...]] = {
+VARSAYILAN_TOHUMLAR: tuple[str, ...] = (
     # ⚠️ Tohumlar KONUYA ÇAPALI, cümle kalıbı değil. DW-111'de ölçüldü:
     # cümle kalıbı tohumları ("who was", "the mystery of") 24 terimin
     # 0'ında tarih/bilim konusu verdi, konu çapalı tohumlar 6'sında.
@@ -77,19 +77,23 @@ VARSAYILAN_TOHUMLAR: dict[str, tuple[str, ...]] = {
     # belirliyor): anıt/yer/nesne konuları hakem kusuru 0-3 alıyor, kişi
     # biyografileri 9-11 — sebebi kişinin kendisi değil ARŞİVİ (portre
     # yığını vs. çeşitli kadrajlar).
-    "en": (
-        "Category:Archaeological sites by country",
-        "Category:Ancient Roman architecture",
-        "Category:Ancient Greek architecture",
-        "Category:Castles by country",
-        "Category:Cathedrals by country",
-        "Category:Shipwrecks",
-        "Category:Ancient Egyptian architecture",
-        "Category:Prehistoric sites",
-        "Category:Museums by country",
-        "Category:Historic bridges",
-    ),
-}
+    #
+    # ⚠️ COĞRAFİ tohumlar ("... by country") bilerek AZ. Ölçüldü
+    # (2026-08-14, canlı): "Archaeological sites in Chile" gibi ülke
+    # kategorileri Wikidata'da LİSTE makalesine bağlanıyor ve liste bir
+    # Short konusu değil. Tekil konu üreten tohumlar (Shipwrecks, Ancient
+    # Roman architecture) daha verimli.
+    "Category:Ancient Roman architecture",
+    "Category:Ancient Greek architecture",
+    "Category:Ancient Egyptian architecture",
+    "Category:Shipwrecks",
+    "Category:Prehistoric sites",
+    "Category:Ancient Roman engineering",
+    "Category:Megalithic monuments",
+    "Category:Ruins",
+    "Category:Archaeological artifacts",
+    "Category:Historic bridges",
+)
 
 
 class ArsivHatasi(RuntimeError):
@@ -136,7 +140,16 @@ def tohumlar(dil: str) -> tuple[str, ...]:
     """
     if dosyadan := tohumlari_oku():
         return tuple(dosyadan)
-    return VARSAYILAN_TOHUMLAR.get(dil, ())
+    # ⚠️ Dil ayrımı YOK ve bu kasıtlı — ölçüldü (2026-08-14): ilk sürüm
+    # tohumları `{"en": (...)}` diye tutuyordu ve `es` pazarı **0 tohum**
+    # alıyordu, yani İspanyolca hiç beslenmiyordu.
+    #
+    # Commons dilden bağımsız TEK bir medya deposu: `Category:Shipwrecks`
+    # her pazar için aynı dosyaları taşıyor. Dile bağlı olan tek şey
+    # makale bağlantısı ve onu Wikidata köprüsü hallediyor — `es` pazarı
+    # aynı kategoriden İspanyolca makaleyi alıyor. Tohumları pazar başına
+    # çevirmek, aynı arşivi iki kez adlandırmak olurdu.
+    return VARSAYILAN_TOHUMLAR
 
 
 def _iste(parametreler: dict) -> dict:
@@ -267,17 +280,39 @@ def ana_konu(oge: str) -> str | None:
     return None
 
 
+LISTE_ONEKLERI = ("list of", "lists of", "liste ", "index of", "outline of")
+"""Video konusu OLMAYAN başlıklar.
+
+⚠️ Ölçüldü (2026-08-14, canlı kuru koşum): üretilen 35 adayın büyük kısmı
+liste makalesine düşüyordu — "List_of_archaeological_sites_in_Chile",
+"List_of_archaeological_sites_by_country". Bunlar dizin sayfaları: bir
+Short'un anlatacağı tekil bir konu değiller ve arşiv menüleri de dağınık.
+
+Sebep yapısal: coğrafi Commons kategorileri ("Archaeological sites in
+Chile") Wikidata'da liste makalesine bağlanıyor, tekil bir konuya değil.
+"""
+
+
+def _liste_makalesi_mi(baslik: str) -> bool:
+    sade = baslik.replace("_", " ").strip().lower()
+    return any(sade.startswith(o) for o in LISTE_ONEKLERI)
+
+
 def makale_baglantisi(oge: str, dil: str) -> str | None:
-    """Öğenin o dildeki Wikipedia MAKALESİ — kategori sayfası değil.
+    """Öğenin o dildeki Wikipedia MAKALESİ — kategori ya da liste değil.
 
     Önce `P301` ile asıl konuya geçiliyor; o yoksa öğenin kendi bağlantısı
     kullanılıyor ama kategori sayfaları elenir.
     """
-    if (konu_ogesi := ana_konu(oge)) and (baslik := _sitelink(konu_ogesi, dil)):
-        return baslik
-    baslik = _sitelink(oge, dil)
-    # ⚠️ "Category:"/"Kategori:" ile başlayan başlık MAKALE DEĞİL.
-    if baslik and ":" in baslik.split("_")[0]:
+    baslik = None
+    if (konu_ogesi := ana_konu(oge)) and (bulunan := _sitelink(konu_ogesi, dil)):
+        baslik = bulunan
+    else:
+        bulunan = _sitelink(oge, dil)
+        # ⚠️ "Category:"/"Kategori:" ile başlayan başlık MAKALE DEĞİL.
+        if bulunan and ":" not in bulunan.split("_")[0]:
+            baslik = bulunan
+    if baslik and _liste_makalesi_mi(baslik):
         return None
     return baslik
 
@@ -379,6 +414,13 @@ def onbellegi_temizle() -> None:
     """Koşumlar arası durum taşımasın (testler ve uzun süreçler için)."""
     _ONBELLEK.clear()
     _TERIM_KATEGORI.clear()
+
+
+def gunluk_nobet(dizin: Path, gun: str | None = None) -> Path:
+    """O günün nöbet dosyası — tarama günde bir kez koşsun diye."""
+    from datetime import date
+
+    return dizin / f".arsiv-{gun or date.today().isoformat()}"
 
 
 def isle(yol: Path, *, pazarlar: tuple[str, ...] | None = None) -> gtrends.IslemeSonucu:
