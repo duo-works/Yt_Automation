@@ -1,6 +1,6 @@
 """Wikipedia kaynağı — ağ çağrısı yamalanarak, canlı istek yok."""
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -213,3 +213,66 @@ def test_eski_veritabani_yeni_tablolari_alir(yol: Path):
 
     assert {"makale", "okunma"} <= adlar
     assert surum == depo.SEMA_SURUMU
+
+
+# --- Okunma yayım gecikmesi (DW-135) -------------------------------------
+
+
+def _gun_sahtesi(monkeypatch, veri_gunu: date | None):
+    """`veri_gunu` dışındaki her gün 404 verir; istenen günleri kaydeder."""
+    istenen: list[date] = []
+
+    def sahte(dil, gun, adet=200):
+        istenen.append(gun)
+        if veri_gunu is None or gun != veri_gunu:
+            raise wikipedia.WikipediaHatasi(f"veri yok (HTTP 404): {gun}")
+        return [wikipedia.Okunma(dil=dil, baslik="Karnak", gun=gun.isoformat(), okunma=10, sira=1)]
+
+    monkeypatch.setattr(wikipedia, "gunluk_liste", sahte)
+    monkeypatch.setattr(konu, "kimlikleri_getir", lambda dil, b: {})
+    monkeypatch.setattr(konu, "varliklari_getir", lambda k: {})
+    return istenen
+
+
+def test_yayim_GECIKINCE_geriye_yuruyor(yol: Path, monkeypatch):
+    """⚠️ Ölçüldü (2026-08-16, canlı uç): 08-13 200 verirken 08-14 404 verdi.
+
+    `son_yayimlanan_gun` sabit iki gün geriye gidiyor ve tam o günü istiyordu;
+    `konu topla` bu yüzden HER koşumda "0 dil · 0 makale" ile düşüyordu.
+    """
+    baslangic = wikipedia.son_yayimlanan_gun()
+    istenen = _gun_sahtesi(monkeypatch, baslangic - timedelta(days=1))
+
+    sonuc = konu_toplayici.topla(yol, diller=("en",))
+
+    assert sonuc.aday == 1, "geriye yürüyüp veriyi bulmalı"
+    assert sonuc.gun == (baslangic - timedelta(days=1)).isoformat()
+    assert istenen[0] == baslangic, "önce beklenen günden başlamalı"
+
+
+def test_ACIK_gun_verilirse_geriye_YURUMUYOR(yol: Path, monkeypatch):
+    """Çağıran belirli bir gün istediyse başka güne kaymak ölçümü bozar."""
+    istenen = _gun_sahtesi(monkeypatch, None)
+
+    konu_toplayici.topla(yol, diller=("en",), gun=date(2026, 7, 28))
+
+    assert istenen == [date(2026, 7, 28)], "tek gün denenmeli"
+
+
+def test_geriye_yurume_BUTCESI_sinirli(yol: Path, monkeypatch):
+    """⚠️ Her adım diller kadar HTTP isteği — sınırsız olamaz."""
+    istenen = _gun_sahtesi(monkeypatch, None)
+
+    sonuc = konu_toplayici.topla(yol, diller=("en",))
+
+    assert sonuc.aday == 0
+    assert len(istenen) == konu_toplayici.GERIYE_YURUME_TAVANI + 1
+
+
+def test_ILK_gun_veri_verirse_fazladan_istek_YOK(yol: Path, monkeypatch):
+    baslangic = wikipedia.son_yayimlanan_gun()
+    istenen = _gun_sahtesi(monkeypatch, baslangic)
+
+    konu_toplayici.topla(yol, diller=("en",))
+
+    assert istenen == [baslangic], "veri geldiyse geriye yürünmemeli"
