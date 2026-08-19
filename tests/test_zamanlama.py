@@ -368,9 +368,7 @@ def test_kredi_bitti_ILGISIZ_hatayi_tutmuyor():
 
 def test_kredi_bitti_kota_tavanindan_AYRI_kapi():
     """İki bütçe hâli birbirini tutmamalı; ayrı kaydediliyorlar."""
-    assert not _kabuk_sorusu(
-        "kota_tavani_mi", "Your credit balance is too low to access the API"
-    )
+    assert not _kabuk_sorusu("kota_tavani_mi", "Your credit balance is too low to access the API")
 
 
 def test_gunluk_huni_kredi_kapisini_KULLANIYOR():
