@@ -316,3 +316,75 @@ def test_kurulum_worktree_kuruyor_ve_tazeleme_sunuyor():
     assert "tazele)" in kurulum
     # `durum` sağlıksızsa sıfırdan farklı dönmeli; betikten kontrol edilebilsin.
     assert 'exit "$saglikli"' in kurulum
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# LLM kredisi de bütçe hâli — kota tavanının ikizi (DW-136)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _kabuk_sorusu(ifade: str, metin: str) -> bool:
+    """`ortak.sh`'taki bir yüklemi GERÇEKTEN çalıştırır.
+
+    ⚠️ `.env` bilerek devre dışı: `YT_OTOMASYON_ENV` var olmayan bir yola
+    çevriliyor. Ortak önyükleme `.env`'i `set -a` ile kaynaklıyor ve testin
+    ortamına sır taşımasının hiçbir gerekçesi yok.
+    """
+    sonuc = subprocess.run(
+        ["bash", "-c", f'source "{BETIKLER}/ortak.sh"; {ifade} "$1"', "_", metin],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "YT_OTOMASYON_KOK": str(KOK),
+            "YT_OTOMASYON_ENV": str(KOK / "yok-boyle-bir-dosya"),
+        },
+    )
+    return sonuc.returncode == 0
+
+
+def test_kredi_bitti_GERCEK_hata_metnini_tutuyor():
+    """Sağlayıcının birebir mesajı — ölçüldü, `veri/gunluk/tarama-*.log`.
+
+    ⚠️ Bu test deseni değil DAVRANIŞI çalıştırıyor: kabuk yüklemi gerçekten
+    koşuyor. Kaynak metninde desen aramak, `grep -qi` tuzağının kota
+    tarafında yaptığı gibi, üretimde hiç tutmayan bir deseni yeşil
+    gösterebilirdi.
+    """
+    ham = (
+        "hata: en[0]: Error code: 400 - {'type':'error','error':{'type':"
+        "'invalid_request_error','message':'Your credit balance is too low "
+        "to access the Anthropic API. Please go to Plans & Billing to "
+        "upgrade or purchase credits.'}}"
+    )
+    assert _kabuk_sorusu("kredi_bitti_mi", ham)
+
+
+def test_kredi_bitti_ILGISIZ_hatayi_tutmuyor():
+    """Kapı gerçek arızayı yutmamalı — yoksa sessiz başarısızlığa döneriz."""
+    assert not _kabuk_sorusu("kredi_bitti_mi", "hata: en: veri yok (HTTP 404)")
+    assert not _kabuk_sorusu("kredi_bitti_mi", "0 sondaj · KOTA TAVANINDA DURDU")
+
+
+def test_kredi_bitti_kota_tavanindan_AYRI_kapi():
+    """İki bütçe hâli birbirini tutmamalı; ayrı kaydediliyorlar."""
+    assert not _kabuk_sorusu(
+        "kota_tavani_mi", "Your credit balance is too low to access the API"
+    )
+
+
+def test_gunluk_huni_kredi_kapisini_KULLANIYOR():
+    """Desen `ortak.sh`'ta durup çağrılmazsa hiçbir şey değişmez.
+
+    Kota tarafında kusur tam da böyle doğmuştu (DW-78): desen bir betikte
+    kullanıldı, diğerinde unutuldu.
+    """
+    metin = (BETIKLER / "gunluk-huni.sh").read_text(encoding="utf-8")
+    assert "kredi_bitti_mi" in metin
+
+
+def test_kredi_deseni_turkce_kucultmeye_guvenmiyor():
+    """Kota tarafındaki `grep -qi` tuzağı burada da yasak."""
+    for ad in ("ortak.sh", "gunluk-huni.sh", "saatlik-tarama.sh"):
+        metin = (BETIKLER / ad).read_text(encoding="utf-8")
+        assert 'grep -qi "$KREDI_BITTI_METNI"' not in metin, ad
