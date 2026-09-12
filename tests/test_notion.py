@@ -1065,6 +1065,85 @@ def test_birak_beklenmeyen_durumda_yazmiyor(kopru, durum):
     assert not sahte.patchler
 
 
+# --- geri-cek: aday üretilemez çıktı, karar insana döner (DW-140) -----------
+#
+# 12 Eyl 23:20 koşumu: `Seçildi`deki War of Jenkins' Ear "ayrık arz 8/8"
+# ölçülmüştü ama kareler karikatür/büst/kat planı; kaynak kapısı üç planı da
+# render'a sokmadı. Köprüde tek geri yol `birak` (→ Seçildi) olduğu için aday
+# kuyrukta kaldı ve elle `Yeni`ye çekilmesi gerekti. Bu geçiş o eksik halka.
+
+
+@pytest.mark.parametrize("durum", ["Üretiliyor", "Seçildi"])
+def test_geri_cek_yeniye_dondurur_ve_gerekceyi_yazar(kopru, durum):
+    sahte = kopru(sayfa=_sahte_sayfa(durum=durum))
+
+    aday = notion.adayi_geri_cek(SAYFA_KIMLIGI, token="t", uretim_notu="arşiv anlatımı taşımıyor")
+
+    (govde,) = sahte.patchler
+    assert govde["properties"]["Durum"] == {"select": {"name": "Yeni"}}
+    assert govde["properties"]["Üretim notu"] == notion._metin("arşiv anlatımı taşımıyor")
+    assert aday.durum == durum
+
+
+def test_geri_cek_yalnizca_durum_ve_not_yaziyor(kopru):
+    """Ölçüm alanları video hattına kapalı (ADR-0011) — bu geçişte de."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+    notion.adayi_geri_cek(SAYFA_KIMLIGI, token="t", uretim_notu="gerekçe")
+
+    (govde,) = sahte.patchler
+    assert set(govde["properties"]) == {"Durum", "Üretim notu"}
+
+
+@pytest.mark.parametrize("durum", ["Yeni", "Üretildi", "Elendi"])
+def test_geri_cek_beklenmeyen_durumda_yazmiyor(kopru, durum):
+    """`Üretildi`yi geri çekmek yayımlanmış videoyu kuyruğa sokar; `Yeni` zaten orada."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum=durum))
+
+    with pytest.raises(notion.NotionHatasi, match="ezmek yerine durduruldu"):
+        notion.adayi_geri_cek(SAYFA_KIMLIGI, token="t", uretim_notu="gerekçe")
+
+    assert not sahte.patchler
+
+
+def test_geri_cek_gerekcesiz_olmaz(kopru):
+    """Gerekçesiz geri çekilen aday kuyruğa neden girmediğini kimseye söyleyemez."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+
+    with pytest.raises(notion.NotionHatasi, match="gerekçesiz"):
+        notion.adayi_geri_cek(SAYFA_KIMLIGI, token="t", uretim_notu="   ")
+
+    assert not sahte.cagrilar, "gerekçe yoksa ağa hiç çıkılmamalı"
+
+
+def test_geri_cek_kuru_kosum_hic_patch_atmiyor(kopru):
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+    aday = notion.adayi_geri_cek(SAYFA_KIMLIGI, token="t", uretim_notu="gerekçe", kuru=True)
+
+    assert aday.durum == "Üretiliyor"
+    assert not sahte.patchler
+
+
+def test_cli_geri_cek_komutu(kopru, capsys):
+    """Köprünün MPT tarafı bu komutu çağırıyor: `ytoto aday geri-cek <kimlik> --not ...`."""
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+
+    assert cli.main(["aday", "geri-cek", SAYFA_KIMLIGI, "--not", "kaynak kapısı 3/3"]) == 0
+
+    (govde,) = sahte.patchler
+    assert govde["properties"]["Durum"] == {"select": {"name": "Yeni"}}
+    assert "Yeni" in capsys.readouterr().out
+
+
+def test_cli_geri_cek_not_zorunlu(kopru, capsys):
+    sahte = kopru(sayfa=_sahte_sayfa(durum="Üretiliyor"))
+
+    with pytest.raises(SystemExit):
+        cli.main(["aday", "geri-cek", SAYFA_KIMLIGI])
+
+    assert not sahte.cagrilar
+    capsys.readouterr()
+
+
 def test_kap_birak_kap_dongusu_ayni_adayi_tekrar_verir(kopru):
     """Düşen üretim kuyruğu tıkamamalı: aday tekrar alınabilir olmalı."""
     sahte = kopru(sayfa=_sahte_sayfa(durum="Seçildi"))
