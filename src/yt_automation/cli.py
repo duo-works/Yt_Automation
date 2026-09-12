@@ -22,7 +22,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import __version__, depo, drive, kanal, kota, oauth
+from . import __version__, depo, drive, geri_besleme, kanal, kota, oauth
 from .kota import KotaAsimi
 from .trend import (
     arsiv,
@@ -836,6 +836,61 @@ def _aday_listele(
     return 0
 
 
+def _performans(*, json_cikti: bool) -> int:
+    """Huninin TAHMİNİ ile videonun GERÇEKLEŞEN sonucunu yan yana koyar.
+
+    Huni bugüne kadar kapalı devreydi: konu seçiyor, video çıkıyor ve sonuç
+    hiçbir yere dönmüyordu. Bütün eşikler dağılımdan seçilmişti, gerçek
+    sonuçtan değil. Bu komut halkayı kapatan ilk adım — ama yalnızca
+    **okuyor**: eşik değiştirmiyor, Notion'a yazmıyor. Ölçüm birikmeden
+    otomatik kalibrasyon, gürültüye tepki vermek olurdu.
+    """
+    rapor = geri_besleme.olc()
+    ozet = rapor.ozet()
+
+    if json_cikti:
+        print(json.dumps(ozet, ensure_ascii=False, indent=2))
+        return 0 if rapor.olcumler else 1
+
+    if not rapor.olcumler:
+        print(
+            "Ölçülebilir video yok.\n"
+            "`Üretildi` adayların `Video URL` alanı boş olabilir ya da videolar "
+            "hâlâ private — Data API private videoyu döndürmez."
+        )
+        return 1
+
+    print(f"{ozet['olculen_video']} video ölçüldü · güven: {ozet['guven']}\n")
+    print(f"  {'konu':26} {'talep':>8} {'skor':>6} {'İZLENME':>8} {'beğeni':>7}")
+    print("  " + "-" * 60)
+    for olcum in rapor.sirala():
+        talep = "     —" if olcum.talep is None else f"{olcum.talep:8.0f}"
+        skor = "    —" if olcum.bosluk_skoru is None else f"{olcum.bosluk_skoru:6.2f}"
+        print(f"  {olcum.baslik[:25]:26} {talep} {skor} {olcum.izlenme:8} {olcum.begeni:7}")
+
+    uyum = ozet["talep_izlenme_uyumu"]
+    print()
+    if uyum is None:
+        print("  Talep–izlenme uyumu: hesaplanamıyor (en az 3 ölçüm gerekli).")
+    else:
+        print(f"  Talep–izlenme uyumu (Spearman): {uyum:+.2f}")
+
+    if rapor.eslesmeyen:
+        print(f"\n  Eşleşmeyen {len(rapor.eslesmeyen)} aday: {', '.join(rapor.eslesmeyen)}")
+        print("  (video private ya da `Video URL` boş — hata değil)")
+
+    # ⚠️ Bu uyarı bilinçli olarak her koşumda basılıyor. Az örneklemde
+    # tabloya bakıp örüntü uydurmak kolay; 2026-08-12'de tam olarak bu oldu.
+    if ozet["guven"] != "orta":
+        print(
+            "\n⚠️ Bu sayılardan sonuç ÇIKARILAMAZ: örneklem küçük ve kanal yeni. "
+            "İzlenme farkları konu seçiminden çok yayın saatinden, başlık "
+            "biçiminden ya da algoritmanın rastgele test trafiğinden gelebilir.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def _aday_sec(*, hedef: str, kuru: bool) -> int:
     aday = notion.adayi_sec(_aday_kimligi(hedef), token=notion.token_al(), kuru=kuru)
     if kuru:
@@ -1252,7 +1307,15 @@ def main(argv: list[str] | None = None) -> int:
     abitir.add_argument("--not", dest="uretim_notu", help="`Üretim notu` alanına yazılır")
     abitir.add_argument("--kuru", action="store_true", help="Ne yazılacağını göster, yazma")
 
+    perf = altlar.add_parser(
+        "performans",
+        help="Yayınlanan videoların gerçek sonucunu huninin tahminiyle karşılaştır",
+    )
+    perf.add_argument("--json", dest="json_cikti", action="store_true", help="Makine okunur çıktı")
+
     args = ayristirici.parse_args(argv)
+    if args.komut == "performans":
+        return _performans(json_cikti=args.json_cikti)
     if args.komut == "dogrula":
         return _dogrula(args.dizin, args.kanal)
     if args.komut == "trend":
