@@ -360,10 +360,24 @@ def test_kredi_bitti_GERCEK_hata_metnini_tutuyor():
     assert _kabuk_sorusu("kredi_bitti_mi", ham)
 
 
+def test_kredi_bitti_OPENROUTER_402_metnini_de_tutuyor():
+    """DW-138 ile sınıflandırıcı OpenRouter'a gidebiliyor; oranın 402'si
+    başka metin. Birebir (MPT `hata-20260912-111250.log`)."""
+    ham = (
+        'hata: en[0]: Error code: 402 - {"error":{"message":"This request '
+        "requires more credits, or fewer max_tokens. You requested up to 8000 "
+        'tokens, but can only afford 12.","code":402}}'
+    )
+    assert _kabuk_sorusu("kredi_bitti_mi", ham)
+
+
 def test_kredi_bitti_ILGISIZ_hatayi_tutmuyor():
     """Kapı gerçek arızayı yutmamalı — yoksa sessiz başarısızlığa döneriz."""
     assert not _kabuk_sorusu("kredi_bitti_mi", "hata: en: veri yok (HTTP 404)")
     assert not _kabuk_sorusu("kredi_bitti_mi", "0 sondaj · KOTA TAVANINDA DURDU")
+    # OpenRouter'ın 429'u ve 401'i bütçe hâli DEĞİL — gerçek arıza gibi görünmeli.
+    assert not _kabuk_sorusu("kredi_bitti_mi", "Error code: 429 - rate limited")
+    assert not _kabuk_sorusu("kredi_bitti_mi", "Error code: 401 - No auth credentials found")
 
 
 def test_kredi_bitti_kota_tavanindan_AYRI_kapi():

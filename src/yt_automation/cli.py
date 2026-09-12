@@ -717,7 +717,8 @@ def _konu_siniflandir(*, limit: int, kuru: bool) -> int:
         grup = -(-len(kuyruk) // siniflandirici.GRUP_BOYUTU)  # tavana yuvarla
         print("KURU KOŞUM — sınıflandırma")
         print(f"  {len(kuyruk)} makale × {siniflandirici.GRUP_BOYUTU}'lik gruplar = {grup} çağrı")
-        print(f"  model: {siniflandirici.MODEL}")
+        saglayici, model = siniflandirici.saglayici_ve_model()
+        print(f"  sağlayıcı: {saglayici} · model: {model}")
         for k in kuyruk[:5]:
             print(f"    · [{k['dil']}] {k['baslik'].replace('_', ' ')} ({k['okunma']:,} okunma)")
         if len(kuyruk) > 5:
