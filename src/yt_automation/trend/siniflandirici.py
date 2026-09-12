@@ -34,6 +34,26 @@ from . import wikipedia
 ANAHTAR_DEGISKENI = "ANTHROPIC_API_KEY"
 MODEL = "claude-opus-5"
 
+# ⚠️ SAĞLAYICI SEÇİLEBİLİR (DW-138). Ölçüldü (2026-09-12): sınıflandırıcı
+# `claude-opus-5`'e sabitti, Anthropic hesabında kredi yoktu ve huni 7
+# Ağustos'tan beri hiç besleme yapamadı (`konu siniflandir` her koşumda 400).
+# Üretim hattı zaten OpenRouter'da ve orada bakiye var; Opus sınıfı fiyatla
+# günde 5 çağrı × 8k token, video üretiminin kendisinden pahalıya geliyordu.
+#
+# Seçim: `LLM_SAGLAYICI` (anthropic | openrouter). Boşsa eski davranış —
+# `ANTHROPIC_API_KEY` varsa Anthropic; yoksa `OPENROUTER_API_KEY` varsa
+# OpenRouter. Yani mevcut kurulumlar değişmez, geçiş `.env`'den yapılır.
+SAGLAYICI_DEGISKENI = "LLM_SAGLAYICI"
+SAGLAYICILAR = ("anthropic", "openrouter")
+OPENROUTER_ANAHTAR_DEGISKENI = "OPENROUTER_API_KEY"
+OPENROUTER_MODEL_DEGISKENI = "OPENROUTER_MODEL"
+OPENROUTER_VARSAYILAN_MODEL = "moonshotai/kimi-k2.6"
+OPENROUTER_UCU = "https://openrouter.ai/api/v1/chat/completions"
+# Grup başına 20 makale × (özet ≤400 karakter) ≈ 4-6k giriş; çıktı ≤ 2k.
+# 180 sn, MPT'nin Shorts metin sınırının (360) yarısı — burada görü yok.
+OPENROUTER_ZAMAN_ASIMI = 180
+AZAMI_CIKTI_TOKEN = 8_000
+
 # Tek istekteki makale sayısı. 20 bilinçli: istem başına sabit maliyet
 # (yönerge metni) makale sayısına bölünüyor, ama grup büyüdükçe modelin
 # tek bir makaleye ayırdığı dikkat azalıyor ve bir hata tüm grubu etkiliyor.
@@ -100,20 +120,68 @@ class SiniflandirmaSonucu:
     siniflar: dict[str, int] = field(default_factory=dict)
     hatalar: list[str] = field(default_factory=list)
 
+    maliyet_usd: float = 0.0
+
     def ozet(self) -> str:
         dagilim = " · ".join(f"{k}:{v}" for k, v in sorted(self.siniflar.items()))
         satir = f"{self.sorulan} makale · {self.cagri_sayisi} çağrı · {dagilim or 'sonuç yok'}"
+        if self.maliyet_usd:
+            # Yalnızca sağlayıcı maliyeti cevaba yazıyorsa (OpenRouter
+            # `usage.include`); Anthropic yazmıyor, satır değişmiyor.
+            satir += f" · ${self.maliyet_usd:.4f}"
         if self.hatalar:
             satir += f" · {len(self.hatalar)} hata"
         return satir
 
 
+def saglayici_sec(ortam: dict[str, str] | None = None) -> str:
+    """Hangi sağlayıcı — `LLM_SAGLAYICI`, yoksa eldeki anahtara göre.
+
+    Açık seçim tanınmayan bir değerse HATA: sessizce Anthropic'e düşmek,
+    kullanıcının "OpenRouter'a geçtim" sandığı hattı Anthropic'te
+    çalıştırırdı — ve o hesapta kredi yoksa yine 400.
+    """
+    ortam = os.environ if ortam is None else ortam
+    secim = ortam.get(SAGLAYICI_DEGISKENI, "").strip().lower()
+    if secim in SAGLAYICILAR:
+        return secim
+    if secim:
+        raise SiniflandirmaHatasi(
+            f"{SAGLAYICI_DEGISKENI}={secim!r} tanınmıyor; seçenekler: " + " | ".join(SAGLAYICILAR)
+        )
+    if ortam.get(ANAHTAR_DEGISKENI):
+        return "anthropic"
+    if ortam.get(OPENROUTER_ANAHTAR_DEGISKENI):
+        return "openrouter"
+    return "anthropic"
+
+
+def saglayici_ve_model(ortam: dict[str, str] | None = None) -> tuple[str, str]:
+    """Kuru koşum çıktısı ve loglar için: ("openrouter", "moonshotai/kimi-k2.6")."""
+    ortam = os.environ if ortam is None else ortam
+    secim = saglayici_sec(ortam)
+    if secim == "openrouter":
+        model = ortam.get(OPENROUTER_MODEL_DEGISKENI, "").strip() or OPENROUTER_VARSAYILAN_MODEL
+        return secim, model
+    return secim, MODEL
+
+
 def istemci_kur():
-    """Anthropic istemcisi.
+    """Seçilen sağlayıcının istemcisi.
 
     Ağır içe aktarım fonksiyonun içinde: `anthropic` yalnızca bu komut
     çalıştırıldığında yükleniyor, `ytoto dogrula` gibi komutlar etkilenmiyor.
+    OpenRouter yolu yeni bağımlılık getirmiyor (`urllib`).
     """
+    secim, model = saglayici_ve_model()
+    if secim == "openrouter":
+        anahtar = os.environ.get(OPENROUTER_ANAHTAR_DEGISKENI, "").strip()
+        if not anahtar:
+            raise SiniflandirmaHatasi(
+                f"{OPENROUTER_ANAHTAR_DEGISKENI} tanımlı değil. openrouter.ai/settings/keys"
+                "'den alın, `.env`'e koyun ve kabuğa aktarın: set -a; source .env; set +a"
+            )
+        return OpenRouterIstemci(anahtar, model)
     if not os.environ.get(ANAHTAR_DEGISKENI):
         raise SiniflandirmaHatasi(
             f"{ANAHTAR_DEGISKENI} tanımlı değil. console.anthropic.com'dan alın, "
@@ -122,6 +190,87 @@ def istemci_kur():
     import anthropic
 
     return anthropic.Anthropic()
+
+
+def _json_govdesi(icerik: str | None) -> dict:
+    """Modelin metnini JSON'a çevirir; ```json çitini soyar.
+
+    ⚠️ `response_format=json_object` her sağlayıcıda tutulan bir söz değil:
+    MPT'de ölçüldü (2026-08-15), OpenRouter üzerinden Kimi cevabı ```json
+    çitiyle döndürüyor ve çıplak `json.loads` patlıyor. Boş cevap da sessiz
+    geçmemeli — akıl yürütme bütçeyi yediğinde tam böyle görünüyor.
+    """
+    metin = (icerik or "").strip()
+    if metin.startswith("```"):
+        metin = re.sub(r"^```[a-zA-Z]*\s*", "", metin)
+        metin = re.sub(r"\s*```$", "", metin)
+    if not metin:
+        raise SiniflandirmaHatasi("model boş cevap döndürdü (akıl yürütme bütçeyi yemiş olabilir)")
+    return json.loads(metin)
+
+
+class OpenRouterIstemci:
+    """OpenAI uyumlu sohbet ucu — `sor(yonerge, istem) -> dict`.
+
+    ⚠️ `reasoning: enabled=false` ZORUNLU: `moonshotai/kimi-k2.6` bir akıl
+    yürütme modeli ve MPT'de ölçüldü — bütün çıktı bütçesini düşünmeye
+    harcayıp `content` boş dönüyor (`max_tokens 16000 -> reasoning 16000`).
+    `usage.include` bedava ve maliyeti cevaba yazıyor; özet satırı onu
+    gösteriyor ki "sınıflandırma ne tuttu" sorusu ölçüsüz kalmasın.
+    """
+
+    def __init__(self, anahtar: str, model: str, *, uc: str = OPENROUTER_UCU):
+        self.anahtar = anahtar
+        self.model = model
+        self.uc = uc
+        self.maliyet_usd = 0.0
+
+    def _gonder(self, govde: dict) -> dict:
+        import urllib.error
+        import urllib.request
+
+        istek = urllib.request.Request(
+            self.uc,
+            data=json.dumps(govde).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.anahtar}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/duo-works/Yt_Automation",
+                "X-Title": "Yt_Automation konu siniflandir",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(istek, timeout=OPENROUTER_ZAMAN_ASIMI) as cevap:
+                return json.loads(cevap.read().decode("utf-8"))
+        except urllib.error.HTTPError as hata:
+            # ⚠️ Gövde metni HATAYA GİRİYOR: `gunluk-huni.sh` bütçe hâlini
+            # (`kredi_bitti_mi`) bu metinden tanıyor. Yutulursa kredisi
+            # bitmiş hat yine "bozuk" görünür — DW-136'nın kapattığı kusur.
+            govde_metni = hata.read().decode("utf-8", "replace")[:400]
+            raise SiniflandirmaHatasi(f"Error code: {hata.code} - {govde_metni}") from hata
+
+    def sor(self, yonerge: str, istem: str) -> dict:
+        veri = self._gonder(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": yonerge},
+                    {"role": "user", "content": istem},
+                ],
+                "max_tokens": AZAMI_CIKTI_TOKEN,
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"},
+                "reasoning": {"enabled": False},
+                "usage": {"include": True},
+            }
+        )
+        maliyet = (veri.get("usage") or {}).get("cost")
+        if isinstance(maliyet, (int, float)):
+            self.maliyet_usd += float(maliyet)
+        secenekler = veri.get("choices") or []
+        icerik = (secenekler[0].get("message") or {}).get("content") if secenekler else None
+        return _json_govdesi(icerik)
 
 
 def bekleyenler(yol: Path, limit: int = 200) -> list[dict]:
@@ -174,18 +323,42 @@ def _istem(kayitlar: list[dict], ozetler: dict[str, str]) -> str:
 
 
 def _grubu_sor(istemci, kayitlar: list[dict], ozetler: dict[str, str]) -> list[dict]:
+    istem = _istem(kayitlar, ozetler)
+    # İki istemci yüzeyi: OpenRouter `sor()`, Anthropic `messages.create()`.
+    # Ayrım burada, tek yerde — çağıran taraf sağlayıcıyı bilmiyor.
+    if hasattr(istemci, "sor"):
+        # Şema OpenAI uyumlu uçta `json_object` ile gidiyor; alan adları ve
+        # sınıf listesi yönergede yazılı olduğu için model aynı yapıyı
+        # döndürüyor, `_yaz` tanınmayan sınıfı zaten reddediyor.
+        return istemci.sor(YONERGE + "\n\n" + _sema_metni(), istem).get("sonuclar", [])
     yanit = istemci.messages.create(
         model=MODEL,
-        max_tokens=8_000,
+        max_tokens=AZAMI_CIKTI_TOKEN,
         system=YONERGE,
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": SEMA}},
-        messages=[{"role": "user", "content": _istem(kayitlar, ozetler)}],
+        messages=[{"role": "user", "content": istem}],
     )
     # Reddedilen istek boş `content` döndürüyor — indekslemeden önce bak.
     if yanit.stop_reason == "refusal":
         raise SiniflandirmaHatasi("model isteği reddetti")
     metin = next((b.text for b in yanit.content if b.type == "text"), "")
     return json.loads(metin).get("sonuclar", [])
+
+
+def _sema_metni() -> str:
+    """OpenAI uyumlu uçta `json_schema` zorlaması yerine şema yönergeye gömülür."""
+    return "Yalnızca şu JSON nesnesini döndür, başka metin yazma:\n" + json.dumps(
+        {
+            "sonuclar": [
+                {
+                    "baslik": "<listede yazdığı gibi>",
+                    "sinif": "<" + " | ".join(SINIFLAR) + ">",
+                    "gerekce": "<en fazla bir cümle>",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
 
 
 def siniflandir(
@@ -216,6 +389,8 @@ def siniflandir(
                 continue
             sonuc.cagri_sayisi += 1
             _yaz(yol, dil, grup, yanitlar, sonuc)
+    # Sağlayıcı maliyeti biriktiriyorsa (OpenRouter) özete taşınır; yoksa 0.
+    sonuc.maliyet_usd = float(getattr(istemci, "maliyet_usd", 0.0) or 0.0)
     return sonuc
 
 
