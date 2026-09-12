@@ -25,6 +25,7 @@ from pathlib import Path
 from . import __version__, depo, drive, geri_besleme, kanal, kota, oauth
 from .kota import KotaAsimi
 from .trend import (
+    arsiv,
     bolge,
     bosluk,
     gtrends,
@@ -607,6 +608,20 @@ def _konu_gtrends(*, kuru: bool) -> int:
                 print(f"  {geo}: {len(terimler)} öneri ({len(oneri.tohumlar(dil))} tohumdan)")
                 for t in terimler[:5]:
                     print(f"    · {t.terim}")
+
+        # Arşiv-önce kaynak: aynı kuru koşumda, çünkü o da aynı boruyu
+        # besliyor. ⚠️ Diğerlerinden farkı YÖNÜ — talebi ölçüp arzı
+        # varsaymıyor, arşivi zengin konudan başlayıp talebi sonra ölçüyor.
+        print(f"KURU KOŞUM — arşiv kategorileri · eşik: {arsiv.ASGARI_DOSYA}+ dosya")
+        for dil in pazarlar:
+            try:
+                adaylar = arsiv.adaylari_bul(dil)
+            except arsiv.ArsivHatasi as hata:
+                print(f"  {dil}: HATA {hata}", file=sys.stderr)
+                continue
+            print(f"  {dil}: {len(adaylar)} aday ({len(arsiv.tohumlar(dil))} tohumdan)")
+            for a in adaylar[:5]:
+                print(f"    · {a.baslik} ({a.dosya}+ dosya) → {arsiv.makale_bul(dil, a.baslik)}")
         return 0
 
     sonuc = gtrends.isle(yol)
@@ -633,6 +648,37 @@ def _konu_gtrends(*, kuru: bool) -> int:
         print(f"öneri · {on.ozet()}")
         for hata in on.hatalar[:5]:
             print(f"  hata: {hata}", file=sys.stderr)
+
+    # Arşiv-önce kaynak (2026-08-14). ⚠️ Diğer kaynaklardan farkı YÖNÜ:
+    # onlar talebi ölçüp arzı varsayıyor, bu önce Commons'ta arşivi zengin
+    # konuyu buluyor sonra talebi ölçüyor. Ölçüldü: `Yeni` kuyruğundaki 40
+    # adayın 40'ı üretilemezdi ve üretim beslenmediği için durdu.
+    #
+    # Hatası hattı düşürmüyor (ADR-0010 yumuşak düşme): Commons ücretsiz
+    # ama garantili değil, ve diğer iki kaynak çalışmaya devam etmeli.
+    #
+    # ⚠️ GÜNDE BİR KEZ, diğer kaynaklar gibi saatlik değil. Ölçüldü
+    # (2026-08-14): tam tarama ~5,5 dakika (10 tohum × ~60 alt kategori ×
+    # 2 istek) ve `saatlik-tarama.sh` bu komutu SAATTE BİR çağırıyor —
+    # günde ~44 dakika boşa Commons trafiği olurdu. Kategori üyeliği gün
+    # içinde değişmiyor, tazelik kazancı yok.
+    nobet = arsiv.gunluk_nobet(yol.parent)
+    if nobet.exists():
+        print("arşiv · atlandı (bugün tarandı)")
+    else:
+        try:
+            ar = arsiv.isle(yol)
+        except arsiv.ArsivHatasi as hata:
+            print(f"arşiv · atlandı ({hata})", file=sys.stderr)
+        else:
+            print(f"arşiv · {ar.ozet()}")
+            for hata in ar.hatalar[:5]:
+                print(f"  hata: {hata}", file=sys.stderr)
+            # ⚠️ Nöbet yalnızca BAŞARIDA konuyor — düşen tarama ertesi saat
+            # yeniden denensin. `saatlik-tarama.sh`in huni nöbetiyle aynı
+            # desen, gerekçesi de aynı.
+            nobet.parent.mkdir(parents=True, exist_ok=True)
+            nobet.touch()
 
     # Terim gelmemesi hata (RSS kırık olabilir), eşleşme az olması değil:
     # magazin/spor ağırlıklı listede düşük eşleşme normal gün.
