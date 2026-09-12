@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from .. import depo
@@ -49,6 +49,32 @@ def _sinifi_yaz(baglanti, dil: str, baslik: str, qid, tipler, sinif: str, simdi:
     )
 
 
+GERIYE_YURUME_TAVANI = 3
+"""Başlangıç günü boş dönerse en fazla kaç gün daha geriye yürünür.
+
+⚠️ NEDEN VAR — ölçüldü (2026-08-16, canlı). `konu topla` günlerdir HER
+koşumda düşüyordu ve her dil için aynı satırı yazıyordu:
+
+    hata: en: veri yok (HTTP 404): .../all-access/2026/08/14
+    2026-08-14 · 0 dil · 0 makale · 6 hata
+
+Sebep kod değil YUKARI AKIŞ: Wikimedia günlük toplamı beklenenden geç
+yayımlanıyor. Aynı gün uçtan ölçüldü:
+
+    2026-08-12  ->  200
+    2026-08-13  ->  200
+    2026-08-14  ->  404   <- `son_yayimlanan_gun` tam bunu istiyordu
+
+`son_yayimlanan_gun` sabit iki gün geriye gidiyor ve docstring'i "iki gün
+geriden başlamak boşuna 404 almayı önliyor" diyordu; varsayım artık
+tutmuyor. Sabiti üçe çekmek aynı kusuru bir gün öteye taşırdı — gecikme
+değişken. Bu yüzden sabit değil GERİ YÜRÜME eklendi.
+
+⚠️ Bütçe DAR: her adım diller kadar HTTP isteği demek. Üç gün, ölçülen
+gecikmenin iki katı ve saatlik koşumda kabul edilebilir bir tavan.
+"""
+
+
 def topla(
     yol: Path,
     *,
@@ -56,13 +82,41 @@ def topla(
     gun: date | None = None,
     adet: int = 200,
 ) -> ToplamaSonucu:
-    """Verilen diller için bir günün en çok okunan makalelerini toplar.
+    """En son verisi YAYIMLANMIŞ günün en çok okunan makalelerini toplar.
+
+    `gun` açıkça verilirse yalnızca o gün denenir: çağıran belirli bir günü
+    istediyse sessizce başka bir güne kaymak, istenen ölçümü bozmak olur.
+    Verilmezse `son_yayimlanan_gun`'dan başlanıp veri bulunana kadar en çok
+    `GERIYE_YURUME_TAVANI` gün geriye yürünür.
+    """
+    if gun is not None:
+        return _bir_gunu_topla(yol, diller=diller, gun=gun, adet=adet)
+
+    baslangic = wikipedia.son_yayimlanan_gun()
+    sonuc = _bir_gunu_topla(yol, diller=diller, gun=baslangic, adet=adet)
+    for geri in range(1, GERIYE_YURUME_TAVANI + 1):
+        # ⚠️ Ölçüt "hata var mı" DEĞİL "veri geldi mi". Bir dil 404 alırken
+        # başkası veri döndürebilir; o hâlde gün iyidir ve geri yürümek aynı
+        # veriyi ikinci kez yazmak olurdu.
+        if sonuc.diller:
+            return sonuc
+        sonuc = _bir_gunu_topla(yol, diller=diller, gun=baslangic - timedelta(days=geri), adet=adet)
+    return sonuc
+
+
+def _bir_gunu_topla(
+    yol: Path,
+    *,
+    diller: tuple[str, ...],
+    gun: date,
+    adet: int,
+) -> ToplamaSonucu:
+    """Tek bir günü toplar.
 
     Bir dilin hatası diğerlerini düşürmez — DW-28'de aynı kararı bölgeler için
     vermiştik ve ilk canlı koşumda 111 bölgenin hatası sayesinde kalan verinin
     korunması işe yaradı.
     """
-    gun = gun or wikipedia.son_yayimlanan_gun()
     simdi = datetime.now(UTC).isoformat()
     sonuc = ToplamaSonucu(gun=gun.isoformat())
 
