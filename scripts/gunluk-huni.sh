@@ -105,6 +105,12 @@ adim() {
         return 0
     fi
 
+    # LLM kredisi de bütçe hâli; gerekçe `ortak.sh` → `kredi_bitti_mi`.
+    if kredi_bitti_mi "$cikti"; then
+        kaydet "huni · $ad — LLM kredisi bitti (bütçe hâli, hata değil); belirsiz kuyruğu birikiyor"
+        return 0
+    fi
+
     kaydet "HATA: huni · $ad başarısız (çıkış $kod)"
     basarisiz=1
 }
