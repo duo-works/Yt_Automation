@@ -87,9 +87,17 @@ kota_tavani_mi() { printf '%s' "$1" | grep -q "$KOTA_TAVANI_METNI"; }
 #
 # Desen sağlayıcının hata metnine dayanıyor ve testle kilitli. `grep -i`
 # yok: metin ASCII ve yukarıdaki dotless-ı gerekçesi burada da geçerli.
+#
+# İki sağlayıcı, iki metin (DW-138 ile sınıflandırıcı OpenRouter'a da
+# gidebiliyor). OpenRouter 402'si birebir (MPT `hata-20260912-111250.log`):
+# "This request requires more credits, or fewer max_tokens". Sabit tek desen
+# kalırsa OpenRouter'da kredi bitince huni yine saat başı baştan koşar.
 KREDI_BITTI_METNI="credit balance is too low"
+KREDI_BITTI_METNI_OPENROUTER="requires more credits"
 
-kredi_bitti_mi() { printf '%s' "$1" | grep -q "$KREDI_BITTI_METNI"; }
+kredi_bitti_mi() {
+    printf '%s' "$1" | grep -q -e "$KREDI_BITTI_METNI" -e "$KREDI_BITTI_METNI_OPENROUTER"
+}
 
 # macOS bildirimi. `launchd.hata.log`'a yazmak yetmiyor — kimse okumuyor.
 # 2026-07-30: görev dal değişimi yüzünden beş saat boyunca çıkış kodu 127 ile

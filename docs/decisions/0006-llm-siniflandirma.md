@@ -53,3 +53,11 @@ Kararın parçası olan dört detay:
 - **Determinizm düştü.** Aynı makale ilkesel olarak farklı koşuda farklı sınıflanabilir. Önbellek bunu pratikte ortadan kaldırıyor ama garanti etmiyor: veritabanı silinirse sonuçlar birebir aynı olmayabilir. Kabul edildi, çünkü alternatif (kural listeleri) yanlış cevabı **tutarlı** vermek.
 - **Sınıflandırma doğruluğu ölçülmedi.** Kabul ölçütü 30 makalelik elle etiketlenmiş kümede ≥%85; API anahtarı gelene kadar bu ölçüm yapılamadı. Ölçülmeden görev kapanmıyor.
 - **Model kararı gizli kalıyor.** Yalnızca sınıf yazılıyor; `gerekce` alanı isteniyor ama saklanmıyor. Yanlış sınıflandırmaların ayıklanması gerekirse gerekçeyi de saklamak gerekecek.
+
+## Ek — 2026-09-12: sağlayıcı seçilebilir (DW-138)
+
+**Ölçüm.** Sınıflandırıcı `claude-opus-5`'e sabitti; Anthropic hesabında kredi bitince `konu siniflandir` 7 Ağustos'tan 12 Eylül'e kadar HER koşumda 400 aldı ve huni hiç besleme yapamadı. Aynı dönemde üretim hattı (MoneyPrinterTurbo) OpenRouter üzerinden `moonshotai/kimi-k2.6` ile çalışıyordu ve orada bakiye vardı. Opus sınıfı fiyatla günde 5 çağrı × 8k token, video üretiminin kendisinden pahalıya geliyordu; canlı duman testi (4 makale, Kimi) **$0,00108** — 100 makalelik gün ≈ $0,03.
+
+**Karar.** "Model bir sabit" maddesi genişletildi: **sağlayıcı da seçilebilir.** `LLM_SAGLAYICI` (`anthropic` | `openrouter`); boşsa eldeki anahtara göre (Anthropic önce — mevcut kurulumlar değişmez). OpenRouter yolu `urllib` ile, **yeni bağımlılık yok**; `reasoning: enabled=false` zorunlu (Kimi bütçeyi düşünmeye harcayıp boş dönüyor — MPT ölçümü), ```json çiti soyulur, `usage.include` maliyeti özete yazar. `kredi_bitti_mi` OpenRouter 402 metnini de tanır (ADR-0012 sonrası DW-136 kapısı).
+
+**Kabul edilen kısıt.** OpenAI uyumlu uçta `json_schema` zorlaması yerine şema yönergeye gömülür; `_yaz` tanınmayan sınıfı zaten reddediyor. Doğruluk ölçümü (≥%85, 30 makale) OpenRouter yolunda da ilk canlı partide yapılmalı; iki sağlayıcı aynı bakiyeyi ve MPT anahtarının günlük limitini ($5) paylaşır.
