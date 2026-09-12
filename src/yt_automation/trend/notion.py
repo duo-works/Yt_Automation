@@ -951,6 +951,41 @@ def adayi_birak(
     )
 
 
+def adayi_geri_cek(kimlik: str, *, token: str, uretim_notu: str, kuru: bool = False) -> Aday:
+    """`Üretiliyor`/`Seçildi` → `Yeni`. Aday üretilemez çıktı: karar insana döner.
+
+    `birak` kapmayı geri alır ama adayı **kuyrukta tutar** — doğru olan da
+    bu, çünkü çoğu düşüş plan/hakem varyansı ve aynı aday başka bir slotta
+    geçiyor. Bu geçiş farklı bir durum için: üretim adayın **hiçbir planını
+    render'a sokamadı**, kaynak kapısı arşivin anlatımı taşımadığını üç kez
+    ölçtü (12 Eyl 23:20: War of Jenkins' Ear, "ayrık arz 8/8" ölçülmüştü ama
+    kareler karikatür/büst/kat planı). Böyle bir aday `Seçildi`de kaldıkça
+    24 saatte bir aynı slotu yeniden yakıyor ve o kaydı elle `Yeni`ye çekmek
+    kanal sahibine düşüyordu.
+
+    `Yeni`ye dönüyor, `Elendi`ye değil: `Elendi` huninin talep kapılarının
+    kararı ve o istatistiği kirletmemeli; `Yeni` "insan yeniden karar
+    versin" demek. Gerekçe **zorunlu** — gerekçesiz geri çekilen aday
+    kuyruğa neden girmediğini kimseye söyleyemez.
+
+    `Seçildi`den de kabul ediyor: üretim `birak` ile kuyruğa koymuş olabilir
+    ve karar sonradan verilebilir (elle ya da bir sonraki koşumda).
+    """
+    if not uretim_notu.strip():
+        raise NotionHatasi("uretim_notu boş olamaz: gerekçesiz geri çekme sessiz kayıptır.")
+
+    return _durumu_ilerlet(
+        kimlik,
+        token=token,
+        beklenen=(URETILIYOR_DURUMU, SECILDI_DURUMU),
+        ozellikler={
+            "Durum": {"select": {"name": DOKUNULMAMIS_DURUM}},
+            "Üretim notu": _metin(uretim_notu.strip()),
+        },
+        kuru=kuru,
+    )
+
+
 def adayi_bitir(
     kimlik: str,
     *,

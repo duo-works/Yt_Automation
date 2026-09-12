@@ -82,3 +82,26 @@ Dördü de mutasyonla sınandı: koruma kaldırıldığında testler düşüyor.
 Karar günü Notion'daki 97 adayın **95'i `Elendi`, 2'si `Yeni`**. ADR-0011 yazıldığında 97'sinin tamamı `Yeni`ydi; aradaki fark kalibrasyon işinin (DW-51, DW-58) sonucu.
 
 Bu köprüyü gereksiz kılmıyor — PRD günde 1–5 video diyor, iki aday bir günlük üretime yeter. Ama huninin verimi ayrı bir soru: 114 ölçülmüş adayın 106'sı tek bir kapıdan (`kalibre < 2.0 MAD`) eleniyor. Eşiğin doğru olup olmadığı bu ADR'nin konusu değil, ayrı bir görev.
+
+## Ek (2026-09-13, DW-140): `geri-cek` — video hattı `Yeni`ye yazabiliyor
+
+```
+ytoto aday basla    <sayfa-url|kimlik> [--kuru]                       Seçildi → Üretiliyor
+ytoto aday birak    <sayfa-url|kimlik> [--not "..."] [--kuru]         Üretiliyor → Seçildi
+ytoto aday geri-cek <sayfa-url|kimlik> --not "..." [--kuru]           Üretiliyor|Seçildi → Yeni
+```
+
+Yukarıdaki sınır ("video hattı `Seçildi`/`Üretiliyor`/`Üretildi`") bir istisna
+kazandı. Ölçüldü (12 Eyl 23:20 koşumu): `Seçildi`deki bir aday "ayrık arz 8/8"
+ile terfi etmişti ama arşivin verdiği kareler karikatür, büst ve kat planıydı;
+üretimin kaynak kapısı üç planı da render'a sokmadı. Köprüde tek geri yol
+`birak` (→ `Seçildi`) olduğu için aday kuyrukta kaldı ve 24 saat sonra aynı
+slotu yeniden yakacaktı; kaydı elle `Yeni`ye çekmek kanal sahibine düşüyordu.
+
+`geri-cek` o eksik halka: aday **üretilemez** çıktığında (hiçbir planı kaynak
+kapısını geçmedi) video hattı kararı insana geri verir. `Yeni`ye döner,
+`Elendi`ye değil — `Elendi` huninin talep kapılarının kararıdır ve o istatistik
+kirlenmemeli. Gerekçe zorunlu (`--not`), `Üretim notu`na yazılır; ölçüm
+alanlarına yine dokunulmaz (ADR-0011). Tüketici tarafında (`huni_besle`) bu
+adaylar ayrık-sayı ölçümüyle yeniden terfi ettirilmez; insan `aday sec` ile
+yine seçebilir.
