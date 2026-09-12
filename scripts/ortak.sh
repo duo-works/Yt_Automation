@@ -67,6 +67,30 @@ KOTA_TAVANI_METNI="KOTA TAVANINDA DURDU"
 
 kota_tavani_mi() { printf '%s' "$1" | grep -q "$KOTA_TAVANI_METNI"; }
 
+# LLM kredisinin bitmesi de bütçe hâli — yukarıdaki kota tavanının ikizi.
+#
+# Ölçüldü (2026-08-19): `konu siniflandir` 7 Ağustos'tan beri HER koşumda
+# 400 dönüyor ("Your credit balance is too low to access the Anthropic API").
+# Son 7 günde 655 hata satırı. Adım hata sayıldığı için `gunluk-huni.sh`
+# `exit 1` ile bitiyor, `saatlik-tarama.sh` nöbet dosyasını yazmıyor ve
+# günlük huni ERTESİ SAAT baştan koşuyor. Kanıt: `veri/gunluk/` içinde
+# `.genis-*` damgaları var, `.huni-*` HİÇ YOK.
+#
+# Bedeli iki katlı: sondaj kotası günün ilk koşumunda tükeniyor (sonraki
+# koşumlar `0 sondaj`), ve her saat "huni düştü" bildirimi gidiyor — yani
+# kredisi bitmiş bir hat ile gerçekten bozulmuş bir hat yine aynı görünüyor.
+# Bu, yukarıdaki yorumun 2026-08-04'te kota için tarif ettiği kusurun aynısı.
+#
+# ⚠️ Bu satır krediyi geri getirmez, YANLIŞ ALARMI bitirir: adım atlandı
+# diye kaydediliyor ve `belirsiz` kuyruğunun biriktiği zaten ayrıca
+# uyarılıyor (`gunluk-huni.sh`, "belirsiz kuyruğu birikiyor").
+#
+# Desen sağlayıcının hata metnine dayanıyor ve testle kilitli. `grep -i`
+# yok: metin ASCII ve yukarıdaki dotless-ı gerekçesi burada da geçerli.
+KREDI_BITTI_METNI="credit balance is too low"
+
+kredi_bitti_mi() { printf '%s' "$1" | grep -q "$KREDI_BITTI_METNI"; }
+
 # macOS bildirimi. `launchd.hata.log`'a yazmak yetmiyor — kimse okumuyor.
 # 2026-07-30: görev dal değişimi yüzünden beş saat boyunca çıkış kodu 127 ile
 # öldü, hata günlüğüne beş satır düştü ve tesadüfen fark edildi. Sessiz
